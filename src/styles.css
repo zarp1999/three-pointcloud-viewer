@@ -1,0 +1,240 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #333;
+    height: 100vh;
+    overflow: hidden;
+}
+
+.container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+header {
+    background: rgba(255, 255, 255, 0.95);
+    padding: 1rem 2rem;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(10px);
+}
+
+header h1 {
+    color: #2c3e50;
+    margin-bottom: 1rem;
+    font-size: 2rem;
+    font-weight: 300;
+}
+
+.controls {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.controls input[type="file"] {
+    padding: 0.5rem;
+    border: 2px dashed #3498db;
+    border-radius: 8px;
+    background: white;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.controls input[type="file"]:hover {
+    border-color: #2980b9;
+    background: #f8f9fa;
+}
+
+.controls button {
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 8px;
+    background: linear-gradient(45deg, #3498db, #2980b9);
+    color: white;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(52, 152, 219, 0.3);
+}
+
+.controls button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(52, 152, 219, 0.4);
+}
+
+.controls button:active {
+    transform: translateY(0);
+}
+
+.viewer-container {
+    flex: 1;
+    position: relative;
+    background: #1a1a1a;
+    overflow: hidden;
+}
+
+#point-cloud-viewer {
+    width: 100%;
+    height: 100%;
+    position: relative;
+}
+
+.loading {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 2rem 3rem;
+    border-radius: 12px;
+    font-size: 1.2rem;
+    z-index: 1000;
+    display: none;
+}
+
+.loading.show {
+    display: block;
+}
+
+.info-panel {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: rgba(255, 255, 255, 0.95);
+    padding: 1.5rem;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(10px);
+    min-width: 250px;
+    z-index: 100;
+}
+
+.info-panel h3 {
+    color: #2c3e50;
+    margin-bottom: 1rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.info-panel div {
+    margin-bottom: 0.5rem;
+    color: #555;
+    font-size: 0.9rem;
+}
+
+.controls-panel {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    background: rgba(255, 255, 255, 0.95);
+    padding: 1.5rem;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(10px);
+    min-width: 300px;
+    z-index: 100;
+}
+
+.controls-panel h3 {
+    color: #2c3e50;
+    margin-bottom: 1rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.control-group {
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.control-group label {
+    color: #555;
+    font-weight: 500;
+    min-width: 100px;
+}
+
+.control-group input[type="range"] {
+    flex: 1;
+    height: 6px;
+    border-radius: 3px;
+    background: #ddd;
+    outline: none;
+    -webkit-appearance: none;
+}
+
+.control-group input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #3498db;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.control-group input[type="range"]::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #3498db;
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.control-group span {
+    color: #3498db;
+    font-weight: 600;
+    min-width: 40px;
+    text-align: right;
+}
+
+.control-group button {
+    padding: 0.5rem 1rem;
+    border: 2px solid #3498db;
+    border-radius: 6px;
+    background: white;
+    color: #3498db;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.control-group button:hover {
+    background: #3498db;
+    color: white;
+}
+
+/* レスポンシブデザイン */
+@media (max-width: 768px) {
+    .controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .controls button {
+        margin-top: 0.5rem;
+    }
+    
+    .info-panel, .controls-panel {
+        position: relative;
+        margin: 10px;
+        width: calc(100% - 20px);
+    }
+    
+    .viewer-container {
+        height: calc(100vh - 200px);
+    }
+}
