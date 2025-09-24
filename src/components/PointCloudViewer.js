@@ -1,3 +1,17 @@
+/**
+ * 点群データビューア - メインビューアコンポーネント
+ * 
+ * Three.jsを使用して3D点群データを表示するコアコンポーネントです。
+ * LASファイルとPLYファイルの両方に対応し、大規模データの最適化機能も含みます。
+ * 
+ * 主な機能:
+ * - LAS/PLYファイルの読み込みと解析
+ * - 3D点群の表示とインタラクション
+ * - 品質レベル調整（LODシステム）
+ * - 色情報の表示/非表示切り替え
+ * - 点のサイズと透明度の調整
+ */
+
 import React, { forwardRef, useImperativeHandle, useRef, useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
@@ -5,7 +19,16 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 /**
  * 点群ビューアコンポーネント
- * Three.jsを使用して3D点群を表示する
+ * 
+ * Three.jsを使用して3D点群を表示するメインコンポーネントです。
+ * forwardRefを使用して親コンポーネントから直接制御できるAPIを提供します。
+ * 
+ * @param {Object} props - コンポーネントのプロパティ
+ * @param {number} props.pointSize - 点のサイズ
+ * @param {number} props.opacity - 透明度
+ * @param {boolean} props.showColors - 色表示の有無
+ * @param {Function} props.onPointCloudLoaded - 点群読み込み完了時のコールバック
+ * @param {Function} props.onLoadingChange - ローディング状態変更時のコールバック
  */
 const PointCloudViewer = forwardRef(({ 
   pointSize, 

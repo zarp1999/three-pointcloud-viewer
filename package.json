@@ -1,8 +1,8 @@
 {
-  "name": "point-cloud-viewer",
-  "version": "1.0.0",
-  "description": "Three.jsを使用した点群データビューア",
-  "main": "index.html",
+  "name": "three-pointcloud-viewer",
+  "version": "2.0.0",
+  "description": "React + Three.jsを使用した高機能点群データビューア - LAS/PLYファイル対応、LODシステム、大規模データ最適化",
+  "main": "src/index.js",
   "scripts": {
     "start": "npx http-server -p 8080 -c-1",
     "dev": "npx webpack serve --mode development",
@@ -11,10 +11,16 @@
   "keywords": [
     "point-cloud",
     "three.js",
+    "react",
     "las",
     "ply",
     "visualization",
-    "3d"
+    "3d",
+    "lidar",
+    "lod",
+    "webgl",
+    "point-cloud-viewer",
+    "3d-viewer"
   ],
   "author": "Point Cloud Viewer",
   "license": "MIT",
