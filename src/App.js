@@ -18,7 +18,6 @@ function App() {
   const [pointSize, setPointSize] = useState(0.01);
   const [opacity, setOpacity] = useState(1.0);
   const [showColors, setShowColors] = useState(true);
-  const [qualityLevel, setQualityLevel] = useState(0);
   const [showStats, setShowStats] = useState(false);
   
   // Three.js関連の参照
@@ -63,16 +62,6 @@ function App() {
     setShowColors(!showColors);
   };
 
-  /**
-   * 品質レベルを変更する
-   * @param {number} level - 新しい品質レベル（0-3）
-   */
-  const handleQualityChange = (level) => {
-    setQualityLevel(level);
-    if (viewerRef.current) {
-      viewerRef.current.setQualityLevel(level);
-    }
-  };
 
   /**
    * Stats Panelの表示/非表示を切り替える
@@ -127,7 +116,6 @@ function App() {
         onPointSizeChange={handlePointSizeChange}
         onOpacityChange={handleOpacityChange}
         onToggleColors={handleToggleColors}
-        onQualityChange={handleQualityChange}
         onToggleStats={handleToggleStats}
         onReset={handleReset}
       />

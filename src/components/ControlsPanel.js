@@ -12,7 +12,6 @@ const ControlsPanel = ({
   onOpacityChange,
   onToggleColors,
   onReset,
-  onQualityChange,
   onToggleStats
 }) => {
   /**
@@ -33,21 +32,6 @@ const ControlsPanel = ({
     onOpacityChange(opacity);
   };
 
-  /**
-   * 品質レベルが変更された時の処理
-   * @param {Event} event - スライダーイベント
-   */
-  const handleQualityChange = (event) => {
-    const quality = parseInt(event.target.value);
-    onQualityChange(quality);
-    
-    // 品質レベルの表示を更新
-    const qualityLabels = ['最高品質', '高品質', '中品質', '低品質'];
-    const qualityValue = document.getElementById('qualityValue');
-    if (qualityValue) {
-      qualityValue.textContent = qualityLabels[quality];
-    }
-  };
 
   return (
     <div className="controls-panel">
@@ -87,19 +71,6 @@ const ControlsPanel = ({
         >
           {showColors ? '色情報を無効にする' : '色情報を有効にする'}
         </button>
-      </div>
-      <div className="control-group">
-        <label htmlFor="quality">品質レベル:</label>
-        <input 
-          type="range" 
-          id="quality" 
-          min="0" 
-          max="3" 
-          step="1" 
-          defaultValue="0"
-          onChange={handleQualityChange}
-        />
-        <span id="qualityValue">最高品質</span>
       </div>
       <div className="control-group">
         <button onClick={onToggleStats}>

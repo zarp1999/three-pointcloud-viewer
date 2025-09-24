@@ -51,7 +51,6 @@ const PointCloudViewer = forwardRef(({
 
   // 点群情報の状態
   const [pointCloudInfo, setPointCloudInfo] = useState(null);
-  const [qualityLevel, setQualityLevel] = useState(0); // 品質レベル（0-3）
 
   /**
    * コンポーネントの初期化
@@ -263,8 +262,8 @@ const PointCloudViewer = forwardRef(({
           console.log(`Point Data Record Length: ${header.pointDataRecordLength}`);
           console.log(`Total Points: ${header.totalPoints}`);
 
-          // 点群データを解析（品質レベルを適用）
-          const points = parseLASPoints(dataView, header, qualityLevel);
+          // 点群データを解析（LODシステムが自動調整）
+          const points = parseLASPoints(dataView, header);
 
           console.log('取得した点群数:', points.length);
 
@@ -424,31 +423,22 @@ const PointCloudViewer = forwardRef(({
   };
 
   /**
-   * LASファイルの点群データを解析する（プログレッシブ読み込み対応）
+   * LASファイルの点群データを解析する（LODシステム対応）
    * @param {DataView} dataView - データビュー
    * @param {Object} header - ヘッダー情報
-   * @param {number} qualityLevel - 品質レベル（0-3、0が最高品質）
    * @returns {Array} 点群データの配列
    */
-  const parseLASPoints = (dataView, header, qualityLevel = 0) => {
+  const parseLASPoints = (dataView, header) => {
     const points = [];
     const offset = header.pointDataOffset;
     const recordLength = header.pointDataRecordLength;
     const pointDataFormat = header.pointDataFormat;
 
-    // 品質レベルに基づく点数の制限
-    const qualitySettings = [
-      { maxPoints: 1000000, step: 1 },      // 最高品質: 100万点
-      { maxPoints: 500000, step: 2 },        // 高品質: 50万点（2点に1点）
-      { maxPoints: 250000, step: 4 },        // 中品質: 25万点（4点に1点）
-      { maxPoints: 100000, step: 10 }        // 低品質: 10万点（10点に1点）
-    ];
+    // LODシステムが自動調整するため、全点を読み込み
+    const maxPoints = header.totalPoints;
+    const step = 1; // 全点を読み込み
 
-    const settings = qualitySettings[qualityLevel];
-    const maxPoints = Math.min(header.totalPoints, settings.maxPoints);
-    const step = settings.step;
-
-    console.log(`点群データを読み込み中... (品質レベル: ${qualityLevel}, 最大${maxPoints}点, ステップ: ${step})`);
+    console.log(`点群データを読み込み中... (最大${maxPoints}点, LODシステムで自動調整)`);
 
     for (let i = 0; i < maxPoints; i += step) {
       const recordOffset = offset + (i * recordLength);
@@ -756,10 +746,6 @@ const PointCloudViewer = forwardRef(({
         }
       }
     },
-    setQualityLevel: (level) => {
-      setQualityLevel(Math.max(0, Math.min(3, level)));
-    },
-    getQualityLevel: () => qualityLevel,
     toggleStats,
     resetView
   }));
