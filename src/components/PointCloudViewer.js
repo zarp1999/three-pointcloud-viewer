@@ -16,6 +16,7 @@ import React, { forwardRef, useImperativeHandle, useRef, useEffect, useState } f
 import * as THREE from 'three';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import Stats from 'three/examples/jsm/libs/stats.module.js';
 
 /**
  * 点群ビューアコンポーネント
@@ -45,6 +46,7 @@ const PointCloudViewer = forwardRef(({
   const controlsRef = useRef(null);
   const currentPointCloudRef = useRef(null);
   const animationIdRef = useRef(null);
+  const statsRef = useRef(null);
 
   // 点群情報の状態
   const [pointCloudInfo, setPointCloudInfo] = useState(null);
@@ -62,6 +64,9 @@ const PointCloudViewer = forwardRef(({
       }
       if (rendererRef.current) {
         rendererRef.current.dispose();
+      }
+      if (statsRef.current && statsRef.current.dom && statsRef.current.dom.parentNode) {
+        statsRef.current.dom.parentNode.removeChild(statsRef.current.dom);
       }
     };
   }, []);
@@ -139,6 +144,21 @@ const PointCloudViewer = forwardRef(({
     directionalLight.position.set(1, 1, 1);
     scene.add(directionalLight);
 
+    // Stats Panelを初期化
+    const stats = new Stats();
+    stats.showPanel(0); // フレームレートパネルを表示
+    stats.dom.style.position = 'absolute';
+    stats.dom.style.top = '10px';
+    stats.dom.style.left = '10px';
+    stats.dom.style.zIndex = '1000';
+    stats.dom.style.display = 'none'; // 初期状態では非表示
+    statsRef.current = stats;
+    
+    // Stats PanelをDOMに追加
+    if (containerRef.current) {
+      containerRef.current.appendChild(stats.dom);
+    }
+
     // ウィンドウリサイズイベント
     window.addEventListener('resize', onWindowResize);
 
@@ -163,12 +183,22 @@ const PointCloudViewer = forwardRef(({
   const animate = () => {
     animationIdRef.current = requestAnimationFrame(animate);
     
+    // Stats Panelの更新
+    if (statsRef.current) {
+      statsRef.current.begin();
+    }
+    
     if (controlsRef.current) {
       controlsRef.current.update();
     }
     
     if (rendererRef.current && sceneRef.current && cameraRef.current) {
       rendererRef.current.render(sceneRef.current, cameraRef.current);
+    }
+    
+    // Stats Panelの更新終了
+    if (statsRef.current) {
+      statsRef.current.end();
     }
   };
 
@@ -558,6 +588,19 @@ const PointCloudViewer = forwardRef(({
     }
   };
 
+  /**
+   * Stats Panelの表示/非表示を切り替える
+   */
+  const toggleStats = () => {
+    if (statsRef.current) {
+      if (statsRef.current.dom.style.display === 'none') {
+        statsRef.current.dom.style.display = 'block';
+      } else {
+        statsRef.current.dom.style.display = 'none';
+      }
+    }
+  };
+
   // 親コンポーネントから呼び出せるメソッドを公開
   useImperativeHandle(ref, () => ({
     loadPointCloud: async (file) => {
@@ -588,6 +631,7 @@ const PointCloudViewer = forwardRef(({
       setQualityLevel(Math.max(0, Math.min(3, level)));
     },
     getQualityLevel: () => qualityLevel,
+    toggleStats,
     resetView
   }));
 

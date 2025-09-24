@@ -19,6 +19,7 @@ function App() {
   const [opacity, setOpacity] = useState(1.0);
   const [showColors, setShowColors] = useState(true);
   const [qualityLevel, setQualityLevel] = useState(0);
+  const [showStats, setShowStats] = useState(false);
   
   // Three.js関連の参照
   const viewerRef = useRef(null);
@@ -74,6 +75,16 @@ function App() {
   };
 
   /**
+   * Stats Panelの表示/非表示を切り替える
+   */
+  const handleToggleStats = () => {
+    setShowStats(!showStats);
+    if (viewerRef.current) {
+      viewerRef.current.toggleStats();
+    }
+  };
+
+  /**
    * ビューをリセットする
    */
   const handleReset = () => {
@@ -117,6 +128,7 @@ function App() {
         onOpacityChange={handleOpacityChange}
         onToggleColors={handleToggleColors}
         onQualityChange={handleQualityChange}
+        onToggleStats={handleToggleStats}
         onReset={handleReset}
       />
     </div>

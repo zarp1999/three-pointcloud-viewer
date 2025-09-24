@@ -12,7 +12,8 @@ const ControlsPanel = ({
   onOpacityChange,
   onToggleColors,
   onReset,
-  onQualityChange
+  onQualityChange,
+  onToggleStats
 }) => {
   /**
    * 点のサイズが変更された時の処理
@@ -99,6 +100,11 @@ const ControlsPanel = ({
           onChange={handleQualityChange}
         />
         <span id="qualityValue">最高品質</span>
+      </div>
+      <div className="control-group">
+        <button onClick={onToggleStats}>
+          Stats Panel 切り替え
+        </button>
       </div>
       <div className="control-group">
         <button onClick={onReset}>
