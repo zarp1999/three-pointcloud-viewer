@@ -628,6 +628,8 @@ const PointCloudViewer = forwardRef(({
       this.pointCloud.geometry.dispose();
       this.pointCloud.geometry = newGeometry;
       
+      // 距離を計算してログ出力
+      const distance = this.camera.position.distanceTo(this.controls.target);
       console.log(`LOD更新: レベル${this.currentLodLevel}, 距離${distance.toFixed(2)}, 点数${sampledCount}`);
     }
 
