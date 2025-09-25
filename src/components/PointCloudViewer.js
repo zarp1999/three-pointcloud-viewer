@@ -559,7 +559,10 @@ const PointCloudViewer = forwardRef(({
       
       if (newLodLevel !== this.currentLodLevel) {
         this.currentLodLevel = newLodLevel;
-        this.applyLOD();
+        this.applyLOD().catch(error => {
+          console.error('LOD更新エラー:', error);
+          this.isUpdating = false;
+        });
       }
     }
 
@@ -580,7 +583,7 @@ const PointCloudViewer = forwardRef(({
     /**
      * LODを適用して点群の詳細度を調整
      */
-    applyLOD() {
+    async applyLOD() {
       if (!this.pointCloud || !this.originalGeometry || this.isUpdating) return;
 
       this.isUpdating = true;
