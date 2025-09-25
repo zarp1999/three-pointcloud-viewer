@@ -13,8 +13,7 @@ const ControlsPanel = ({
   onToggleColors,
   onReset,
   onToggleStats,
-  onToggleLODViewer,
-  onLoadPotreeData
+  onToggleCesiumViewer
 }) => {
   /**
    * 点のサイズが変更された時の処理
@@ -80,13 +79,8 @@ const ControlsPanel = ({
         </button>
       </div>
       <div className="control-group">
-        <button onClick={onToggleLODViewer}>
-          LODビューア切り替え
-        </button>
-      </div>
-      <div className="control-group">
-        <button onClick={onLoadPotreeData}>
-          Potreeデータ読み込み
+        <button onClick={onToggleCesiumViewer}>
+          CesiumJSビューア切り替え
         </button>
       </div>
       <div className="control-group">
