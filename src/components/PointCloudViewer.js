@@ -434,8 +434,8 @@ const PointCloudViewer = forwardRef(({
     const recordLength = header.pointDataRecordLength;
     const pointDataFormat = header.pointDataFormat;
 
-    // 大規模データの場合は初期読み込みを制限
-    const maxInitialPoints = Math.min(header.totalPoints, 1000000); // 初期は100万点まで
+    // 大規模データの場合は初期読み込みを制限（緩和）
+    const maxInitialPoints = Math.min(header.totalPoints, 5000000); // 初期は500万点まで
     const step = Math.max(1, Math.floor(header.totalPoints / maxInitialPoints));
 
     console.log(`点群データを読み込み中... (初期: ${maxInitialPoints}点, 全点: ${header.totalPoints}点, LODシステムで自動調整)`);
@@ -535,12 +535,12 @@ const PointCloudViewer = forwardRef(({
       this.camera = camera;
       this.controls = controls;
       this.lodLevels = [
-        { maxDistance: 50, pointLimit: 500000, step: 1 },    // 最高詳細度
-        { maxDistance: 100, pointLimit: 250000, step: 2 },  // 高詳細度
-        { maxDistance: 200, pointLimit: 100000, step: 4 },  // 中詳細度
-        { maxDistance: 500, pointLimit: 50000, step: 8 },  // 低詳細度
-        { maxDistance: 1000, pointLimit: 25000, step: 16 }, // 最低詳細度
-        { maxDistance: Infinity, pointLimit: 10000, step: 32 } // 遠景
+        { maxDistance: 50, pointLimit: 2000000, step: 1 },    // 最高詳細度（200万点）
+        { maxDistance: 100, pointLimit: 1000000, step: 2 },  // 高詳細度（100万点）
+        { maxDistance: 200, pointLimit: 500000, step: 4 },  // 中詳細度（50万点）
+        { maxDistance: 500, pointLimit: 250000, step: 8 },  // 低詳細度（25万点）
+        { maxDistance: 1000, pointLimit: 100000, step: 16 }, // 最低詳細度（10万点）
+        { maxDistance: Infinity, pointLimit: 50000, step: 32 } // 遠景（5万点）
       ];
       this.currentLodLevel = 0;
       this.pointCloud = null;
@@ -598,8 +598,8 @@ const PointCloudViewer = forwardRef(({
         const step = Math.max(1, Math.floor(pointCount / lodConfig.pointLimit));
         const sampledCount = Math.floor(pointCount / step);
         
-        // メモリ効率を考慮してバッチ処理
-        const batchSize = 10000; // バッチサイズ
+        // メモリ効率を考慮してバッチ処理（大規模データ対応）
+        const batchSize = 50000; // バッチサイズを増加
         const newPositions = new Float32Array(sampledCount * 3);
         const newColors = new Float32Array(sampledCount * 3);
         
