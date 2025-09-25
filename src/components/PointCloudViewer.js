@@ -434,8 +434,8 @@ const PointCloudViewer = forwardRef(({
     const recordLength = header.pointDataRecordLength;
     const pointDataFormat = header.pointDataFormat;
 
-    // 大規模データの場合は初期読み込みを制限（1億点表示対応）
-    const maxInitialPoints = Math.min(header.totalPoints, 100000000); // 初期は1億点まで
+    // 大規模データの場合は初期読み込みを制限（メモリ効率優先）
+    const maxInitialPoints = Math.min(header.totalPoints, 2000000); // 初期は200万点まで（メモリ安全）
     const step = Math.max(1, Math.floor(header.totalPoints / maxInitialPoints));
 
     console.log(`点群データを読み込み中... (初期: ${maxInitialPoints}点, 全点: ${header.totalPoints}点, LODシステムで自動調整)`);
@@ -560,12 +560,12 @@ const PointCloudViewer = forwardRef(({
       this.camera = camera;
       this.controls = controls;
       this.lodLevels = [
-        { maxDistance: 50, pointLimit: 100000000, step: 1 },    // 最高詳細度（1億点）
-        { maxDistance: 100, pointLimit: 50000000, step: 2 },  // 高詳細度（5000万点）
-        { maxDistance: 200, pointLimit: 25000000, step: 4 },  // 中詳細度（2500万点）
-        { maxDistance: 500, pointLimit: 10000000, step: 8 },  // 低詳細度（1000万点）
-        { maxDistance: 1000, pointLimit: 5000000, step: 16 }, // 最低詳細度（500万点）
-        { maxDistance: Infinity, pointLimit: 1000000, step: 32 } // 遠景（100万点）
+        { maxDistance: 50, pointLimit: 2000000, step: 1 },    // 最高詳細度（200万点）
+        { maxDistance: 100, pointLimit: 1000000, step: 2 },  // 高詳細度（100万点）
+        { maxDistance: 200, pointLimit: 500000, step: 4 },  // 中詳細度（50万点）
+        { maxDistance: 500, pointLimit: 250000, step: 8 },  // 低詳細度（25万点）
+        { maxDistance: 1000, pointLimit: 100000, step: 16 }, // 最低詳細度（10万点）
+        { maxDistance: Infinity, pointLimit: 50000, step: 32 } // 遠景（5万点）
       ];
       this.currentLodLevel = 0;
       this.pointCloud = null;
@@ -624,7 +624,7 @@ const PointCloudViewer = forwardRef(({
       console.log(`段階的読み込み開始: ${this.loadedPoints} → ${targetPoints} 点`);
 
       try {
-        const additionalPoints = Math.min(targetPoints - this.loadedPoints, 10000000); // 最大1000万点ずつ追加
+        const additionalPoints = Math.min(targetPoints - this.loadedPoints, 500000); // 最大50万点ずつ追加（メモリ安全）
         const startIndex = this.loadedPoints;
         const endIndex = Math.min(startIndex + additionalPoints, this.maxLoadedPoints);
 
@@ -690,8 +690,8 @@ const PointCloudViewer = forwardRef(({
         const step = Math.max(1, Math.floor(pointCount / lodConfig.pointLimit));
         const sampledCount = Math.floor(pointCount / step);
         
-        // メモリ効率を考慮してバッチ処理（大規模データ対応）
-        const batchSize = 50000; // バッチサイズを増加
+        // メモリ効率を考慮してバッチ処理（メモリ安全設定）
+        const batchSize = 10000; // バッチサイズを削減（メモリ安全）
         const newPositions = new Float32Array(sampledCount * 3);
         const newColors = new Float32Array(sampledCount * 3);
         
@@ -717,8 +717,20 @@ const PointCloudViewer = forwardRef(({
           }
           
           // メモリ圧迫を防ぐため、バッチごとに少し待機
-          if (batch % (batchSize * 5) === 0) {
+          if (batch % (batchSize * 2) === 0) {
             await new Promise(resolve => setTimeout(resolve, 1));
+            
+            // メモリ使用量をチェック
+            if (performance.memory) {
+              const memoryUsed = performance.memory.usedJSHeapSize / 1024 / 1024;
+              if (memoryUsed > 1000) { // 1GB以上の場合
+                console.warn(`メモリ使用量が高いです: ${memoryUsed.toFixed(2)}MB`);
+                // ガベージコレクションを促進
+                if (window.gc) {
+                  window.gc();
+                }
+              }
+            }
           }
         }
         
@@ -764,7 +776,7 @@ const PointCloudViewer = forwardRef(({
 
       const pointCount = this.originalGeometry.attributes.position.count;
       this.maxLoadedPoints = pointCount;
-      this.loadedPoints = Math.min(pointCount, 100000000); // 初期は1億点まで読み込み
+      this.loadedPoints = Math.min(pointCount, 2000000); // 初期は200万点まで読み込み（メモリ安全）
       
       console.log(`段階的読み込み初期化: 全点${pointCount.toLocaleString()}点, 初期読み込み${this.loadedPoints.toLocaleString()}点`);
     }
