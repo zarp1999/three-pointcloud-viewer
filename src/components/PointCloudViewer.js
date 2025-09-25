@@ -434,13 +434,19 @@ const PointCloudViewer = forwardRef(({
     const recordLength = header.pointDataRecordLength;
     const pointDataFormat = header.pointDataFormat;
 
-    // LODシステムが自動調整するため、全点を読み込み
-    const maxPoints = header.totalPoints;
-    const step = 1; // 全点を読み込み
+    // 大規模データの場合は初期読み込みを制限
+    const maxInitialPoints = Math.min(header.totalPoints, 1000000); // 初期は100万点まで
+    const step = Math.max(1, Math.floor(header.totalPoints / maxInitialPoints));
 
-    console.log(`点群データを読み込み中... (最大${maxPoints}点, LODシステムで自動調整)`);
+    console.log(`点群データを読み込み中... (初期: ${maxInitialPoints}点, 全点: ${header.totalPoints}点, LODシステムで自動調整)`);
+    
+    // 大規模データの警告
+    if (header.totalPoints > 50000000) {
+      console.warn(`⚠️ 大規模データ検出: ${header.totalPoints.toLocaleString()}点`);
+      console.warn('メモリ使用量が大きくなる可能性があります。LODシステムで自動最適化されます。');
+    }
 
-    for (let i = 0; i < maxPoints; i += step) {
+    for (let i = 0; i < maxInitialPoints; i += step) {
       const recordOffset = offset + (i * recordLength);
 
       try {
@@ -529,23 +535,24 @@ const PointCloudViewer = forwardRef(({
       this.camera = camera;
       this.controls = controls;
       this.lodLevels = [
-        { maxDistance: 50, pointLimit: 1000000, step: 1 },    // 最高詳細度
-        { maxDistance: 100, pointLimit: 500000, step: 2 },  // 高詳細度
-        { maxDistance: 200, pointLimit: 250000, step: 4 },  // 中詳細度
-        { maxDistance: 500, pointLimit: 100000, step: 8 },  // 低詳細度
-        { maxDistance: 1000, pointLimit: 50000, step: 16 }, // 最低詳細度
-        { maxDistance: Infinity, pointLimit: 25000, step: 32 } // 遠景
+        { maxDistance: 50, pointLimit: 500000, step: 1 },    // 最高詳細度
+        { maxDistance: 100, pointLimit: 250000, step: 2 },  // 高詳細度
+        { maxDistance: 200, pointLimit: 100000, step: 4 },  // 中詳細度
+        { maxDistance: 500, pointLimit: 50000, step: 8 },  // 低詳細度
+        { maxDistance: 1000, pointLimit: 25000, step: 16 }, // 最低詳細度
+        { maxDistance: Infinity, pointLimit: 10000, step: 32 } // 遠景
       ];
       this.currentLodLevel = 0;
       this.pointCloud = null;
       this.originalGeometry = null;
+      this.isUpdating = false; // 更新中のフラグ
     }
 
     /**
      * カメラ距離に基づいてLODレベルを更新
      */
     updateLOD() {
-      if (!this.pointCloud || !this.originalGeometry) return;
+      if (!this.pointCloud || !this.originalGeometry || this.isUpdating) return;
 
       const distance = this.camera.position.distanceTo(this.controls.target);
       const newLodLevel = this.getLodLevelForDistance(distance);
@@ -574,53 +581,72 @@ const PointCloudViewer = forwardRef(({
      * LODを適用して点群の詳細度を調整
      */
     applyLOD() {
-      if (!this.pointCloud || !this.originalGeometry) return;
+      if (!this.pointCloud || !this.originalGeometry || this.isUpdating) return;
 
-      const lodConfig = this.lodLevels[this.currentLodLevel];
-      const positions = this.originalGeometry.attributes.position.array;
-      const colors = this.originalGeometry.attributes.color.array;
-      const pointCount = positions.length / 3;
-      
-      // サンプリング間隔を計算
-      const step = Math.max(1, Math.floor(pointCount / lodConfig.pointLimit));
-      const sampledCount = Math.floor(pointCount / step);
-      
-      // 新しい配列を作成
-      const newPositions = new Float32Array(sampledCount * 3);
-      const newColors = new Float32Array(sampledCount * 3);
-      
-      // 点群をサンプリング
-      for (let i = 0; i < sampledCount; i++) {
-        const sourceIndex = i * step;
-        const targetIndex = i * 3;
+      this.isUpdating = true;
+
+      try {
+        const lodConfig = this.lodLevels[this.currentLodLevel];
+        const positions = this.originalGeometry.attributes.position.array;
+        const colors = this.originalGeometry.attributes.color.array;
+        const pointCount = positions.length / 3;
         
-        // 位置データをコピー
-        newPositions[targetIndex] = positions[sourceIndex * 3];
-        newPositions[targetIndex + 1] = positions[sourceIndex * 3 + 1];
-        newPositions[targetIndex + 2] = positions[sourceIndex * 3 + 2];
+        // サンプリング間隔を計算
+        const step = Math.max(1, Math.floor(pointCount / lodConfig.pointLimit));
+        const sampledCount = Math.floor(pointCount / step);
         
-        // 色データをコピー
-        if (colors.length > 0) {
-          newColors[targetIndex] = colors[sourceIndex * 3];
-          newColors[targetIndex + 1] = colors[sourceIndex * 3 + 1];
-          newColors[targetIndex + 2] = colors[sourceIndex * 3 + 2];
+        // メモリ効率を考慮してバッチ処理
+        const batchSize = 10000; // バッチサイズ
+        const newPositions = new Float32Array(sampledCount * 3);
+        const newColors = new Float32Array(sampledCount * 3);
+        
+        // バッチ処理で点群をサンプリング
+        for (let batch = 0; batch < sampledCount; batch += batchSize) {
+          const endBatch = Math.min(batch + batchSize, sampledCount);
+          
+          for (let i = batch; i < endBatch; i++) {
+            const sourceIndex = i * step;
+            const targetIndex = i * 3;
+            
+            // 位置データをコピー
+            newPositions[targetIndex] = positions[sourceIndex * 3];
+            newPositions[targetIndex + 1] = positions[sourceIndex * 3 + 1];
+            newPositions[targetIndex + 2] = positions[sourceIndex * 3 + 2];
+            
+            // 色データをコピー
+            if (colors.length > 0) {
+              newColors[targetIndex] = colors[sourceIndex * 3];
+              newColors[targetIndex + 1] = colors[sourceIndex * 3 + 1];
+              newColors[targetIndex + 2] = colors[sourceIndex * 3 + 2];
+            }
+          }
+          
+          // メモリ圧迫を防ぐため、バッチごとに少し待機
+          if (batch % (batchSize * 5) === 0) {
+            await new Promise(resolve => setTimeout(resolve, 1));
+          }
         }
+        
+        // 新しいジオメトリを作成
+        const newGeometry = new THREE.BufferGeometry();
+        newGeometry.setAttribute('position', new THREE.BufferAttribute(newPositions, 3));
+        if (colors.length > 0) {
+          newGeometry.setAttribute('color', new THREE.BufferAttribute(newColors, 3));
+        }
+        
+        // 点群を更新
+        this.pointCloud.geometry.dispose();
+        this.pointCloud.geometry = newGeometry;
+        
+        // 距離を計算してログ出力
+        const distance = this.camera.position.distanceTo(this.controls.target);
+        console.log(`LOD更新: レベル${this.currentLodLevel}, 距離${distance.toFixed(2)}, 点数${sampledCount}`);
+        
+      } catch (error) {
+        console.error('LOD更新エラー:', error);
+      } finally {
+        this.isUpdating = false;
       }
-      
-      // 新しいジオメトリを作成
-      const newGeometry = new THREE.BufferGeometry();
-      newGeometry.setAttribute('position', new THREE.BufferAttribute(newPositions, 3));
-      if (colors.length > 0) {
-        newGeometry.setAttribute('color', new THREE.BufferAttribute(newColors, 3));
-      }
-      
-      // 点群を更新
-      this.pointCloud.geometry.dispose();
-      this.pointCloud.geometry = newGeometry;
-      
-      // 距離を計算してログ出力
-      const distance = this.camera.position.distanceTo(this.controls.target);
-      console.log(`LOD更新: レベル${this.currentLodLevel}, 距離${distance.toFixed(2)}, 点数${sampledCount}`);
     }
 
     /**
