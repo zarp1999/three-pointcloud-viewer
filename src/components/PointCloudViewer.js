@@ -446,8 +446,18 @@ const PointCloudViewer = forwardRef(({
       console.warn('メモリ使用量が大きくなる可能性があります。LODシステムで自動最適化されます。');
     }
 
+    // メモリ使用量の監視開始
+    const startMemory = performance.memory ? performance.memory.usedJSHeapSize : 0;
+    console.log(`読み込み開始時のメモリ使用量: ${(startMemory / 1024 / 1024).toFixed(2)} MB`);
+
     for (let i = 0; i < maxInitialPoints; i += step) {
       const recordOffset = offset + (i * recordLength);
+
+      // レコードオフセットの境界チェック
+      if (recordOffset + recordLength > dataView.byteLength) {
+        console.warn(`点 ${i}: レコードがファイル境界を超えています (オフセット: ${recordOffset}, ファイルサイズ: ${dataView.byteLength})`);
+        break;
+      }
 
       try {
         // 位置データを読み取り（Little Endian）
@@ -511,17 +521,32 @@ const PointCloudViewer = forwardRef(({
 
         points.push(point);
 
-        // 進捗表示（10万点ごと）
-        if (i > 0 && i % 100000 === 0) {
-          console.log(`読み込み進捗: ${i}/${maxPoints} 点`);
+        // 進捗表示（5万点ごと）
+        if (i > 0 && i % 50000 === 0) {
+          console.log(`読み込み進捗: ${i}/${maxInitialPoints} 点 (${((i/maxInitialPoints)*100).toFixed(1)}%)`);
         }
       } catch (error) {
-        console.warn(`点 ${i} の読み込みに失敗:`, error);
-        break;
+        console.error(`点 ${i} の読み込みに失敗:`, error);
+        console.error(`エラー詳細: オフセット=${recordOffset}, レコード長=${recordLength}, ファイルサイズ=${dataView.byteLength}`);
+        
+        // エラーが発生した場合、その点をスキップして続行
+        if (i < 10) {
+          console.warn('最初の数点でエラーが発生。ファイル形式を確認してください。');
+          break;
+        } else {
+          console.warn(`点 ${i} をスキップして続行します。`);
+          continue;
+        }
       }
     }
 
+    // メモリ使用量の監視終了
+    const endMemory = performance.memory ? performance.memory.usedJSHeapSize : 0;
+    const memoryUsed = endMemory - startMemory;
+    console.log(`読み込み完了時のメモリ使用量: ${(endMemory / 1024 / 1024).toFixed(2)} MB`);
+    console.log(`読み込みで使用したメモリ: ${(memoryUsed / 1024 / 1024).toFixed(2)} MB`);
     console.log(`点群データ読み込み完了: ${points.length} 点`);
+    
     return points;
   };
 
