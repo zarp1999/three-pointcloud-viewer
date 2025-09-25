@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import PointCloudViewer from './components/PointCloudViewer';
+import LODPointCloudViewer from './components/LODPointCloudViewer';
 import ControlsPanel from './components/ControlsPanel';
 import InfoPanel from './components/InfoPanel';
 import FileUpload from './components/FileUpload';
@@ -19,9 +20,11 @@ function App() {
   const [opacity, setOpacity] = useState(1.0);
   const [showColors, setShowColors] = useState(true);
   const [showStats, setShowStats] = useState(false);
+  const [useLODViewer, setUseLODViewer] = useState(false); // LODビューアの使用フラグ
   
   // Three.js関連の参照
   const viewerRef = useRef(null);
+  const lodViewerRef = useRef(null);
 
   /**
    * 点群情報を更新する
@@ -71,6 +74,33 @@ function App() {
     if (viewerRef.current) {
       viewerRef.current.toggleStats();
     }
+    if (lodViewerRef.current) {
+      lodViewerRef.current.toggleStats();
+    }
+  };
+
+  /**
+   * LODビューアの切り替え
+   */
+  const handleToggleLODViewer = () => {
+    setUseLODViewer(!useLODViewer);
+    console.log(`LODビューア切り替え: ${!useLODViewer ? '有効' : '無効'}`);
+  };
+
+  /**
+   * Potreeデータの読み込み
+   */
+  const handleLoadPotreeData = async () => {
+    const potreeUrl = prompt('PotreeデータのURLを入力してください (例: /potree_data/cloud.js):');
+    if (potreeUrl && lodViewerRef.current) {
+      try {
+        await lodViewerRef.current.loadPointCloud(potreeUrl);
+        console.log('Potreeデータの読み込みが完了しました');
+      } catch (error) {
+        console.error('Potreeデータの読み込みに失敗:', error);
+        alert('Potreeデータの読み込みに失敗しました: ' + error.message);
+      }
+    }
   };
 
   /**
@@ -95,14 +125,25 @@ function App() {
       </header>
       
       <div className="viewer-container">
-        <PointCloudViewer 
-          ref={viewerRef}
-          pointSize={pointSize}
-          opacity={opacity}
-          showColors={showColors}
-          onPointCloudLoaded={handlePointCloudLoaded}
-          onLoadingChange={handleLoadingChange}
-        />
+        {useLODViewer ? (
+          <LODPointCloudViewer 
+            ref={lodViewerRef}
+            pointSize={pointSize}
+            opacity={opacity}
+            showColors={showColors}
+            onPointCloudLoaded={handlePointCloudLoaded}
+            onLoadingChange={handleLoadingChange}
+          />
+        ) : (
+          <PointCloudViewer 
+            ref={viewerRef}
+            pointSize={pointSize}
+            opacity={opacity}
+            showColors={showColors}
+            onPointCloudLoaded={handlePointCloudLoaded}
+            onLoadingChange={handleLoadingChange}
+          />
+        )}
         {isLoading && (
           <div className="loading show">読み込み中...</div>
         )}
@@ -117,6 +158,8 @@ function App() {
         onOpacityChange={handleOpacityChange}
         onToggleColors={handleToggleColors}
         onToggleStats={handleToggleStats}
+        onToggleLODViewer={handleToggleLODViewer}
+        onLoadPotreeData={handleLoadPotreeData}
         onReset={handleReset}
       />
     </div>
