@@ -292,12 +292,21 @@ const PointCloudViewer = forwardRef(({
               colors[i3] = point.red;
               colors[i3 + 1] = point.green;
               colors[i3 + 2] = point.blue;
+              
+              // デバッグ用：最初の数点の色情報をログ出力
+              if (i < 5) {
+                console.log(`色設定 点${i}: RGB(${point.red.toFixed(3)}, ${point.green.toFixed(3)}, ${point.blue.toFixed(3)})`);
+              }
             } else {
               // 色情報がない場合は高さに基づいて色を設定
               const normalizedHeight = (positions[i3 + 2] - header.minZ) / (header.maxZ - header.minZ);
               colors[i3] = normalizedHeight;
               colors[i3 + 1] = 1.0 - normalizedHeight;
               colors[i3 + 2] = 0.5;
+              
+              if (i < 5) {
+                console.log(`色設定 点${i}: 色情報なし、高さベース色を使用`);
+              }
             }
           }
 
@@ -434,11 +443,14 @@ const PointCloudViewer = forwardRef(({
     const recordLength = header.pointDataRecordLength;
     const pointDataFormat = header.pointDataFormat;
 
-    // 大規模データの場合は初期読み込みを制限（メモリ効率優先）
-    const maxInitialPoints = Math.min(header.totalPoints, 10000000); // 初期は1000万点まで（高度なLODシステム対応）
+    // 大規模データの場合は初期読み込みを制限（全体形状把握優先）
+    const maxInitialPoints = Math.min(header.totalPoints, 2000000); // 初期は200万点まで（全体形状把握）
     const step = Math.max(1, Math.floor(header.totalPoints / maxInitialPoints));
+    
+    console.log(`初期表示設定: 全点${header.totalPoints.toLocaleString()}点 → 表示${maxInitialPoints.toLocaleString()}点 (ステップ: ${step})`);
 
-    console.log(`点群データを読み込み中... (初期: ${maxInitialPoints}点, 全点: ${header.totalPoints}点, LODシステムで自動調整)`);
+    console.log(`点群データを読み込み中... (初期: ${maxInitialPoints}点, 全点: ${header.totalPoints}点, ステップ: ${step}, LODシステムで自動調整)`);
+    console.log(`全体形状把握のため、均等にサンプリングして表示します`);
     
     // 大規模データの警告
     if (header.totalPoints > 50000000) {
@@ -503,13 +515,15 @@ const PointCloudViewer = forwardRef(({
             const blue = dataView.getUint16(recordOffset + colorOffset + 4, true);
             
             // 色情報を正規化（0-1の範囲に変換）
-            point.red = red / 65535.0;
-            point.green = green / 65535.0;
-            point.blue = blue / 65535.0;
+            // LASファイルの色情報は通常16ビット（0-65535）なので、65535で正規化
+            point.red = Math.min(red / 65535.0, 1.0);
+            point.green = Math.min(green / 65535.0, 1.0);
+            point.blue = Math.min(blue / 65535.0, 1.0);
             
             // デバッグ用：最初の数点の色情報をログ出力
             if (i < 10) {
               console.log(`点 ${i}: オフセット${colorOffset} RGB(${red}, ${green}, ${blue}) -> 正規化(${point.red.toFixed(3)}, ${point.green.toFixed(3)}, ${point.blue.toFixed(3)})`);
+              console.log(`   → 実際の色値: R=${Math.round(point.red * 255)}, G=${Math.round(point.green * 255)}, B=${Math.round(point.blue * 255)}`);
             }
           } else {
             // 色情報が読み取れない場合のデバッグ情報
@@ -588,6 +602,7 @@ const PointCloudViewer = forwardRef(({
       // 視錐台カリング
       this.frustum = new THREE.Frustum();
       this.cameraMatrix = new THREE.Matrix4();
+      
       
       // パフォーマンス監視
       this.frameCount = 0;
@@ -1140,8 +1155,11 @@ const PointCloudViewer = forwardRef(({
       vertexColors: showColors,
       size: pointSize,
       transparent: true,
-      opacity: opacity
+      opacity: opacity,
+      sizeAttenuation: true // 距離に応じてサイズを調整
     });
+    
+    console.log(`点群マテリアル設定: 色表示=${showColors}, サイズ=${pointSize}, 透明度=${opacity}`);
 
     // 点群を作成
     const pointCloud = new THREE.Points(geometry, material);
