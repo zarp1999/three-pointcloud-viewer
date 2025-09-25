@@ -571,6 +571,9 @@ const PointCloudViewer = forwardRef(({
       this.pointCloud = null;
       this.originalGeometry = null;
       this.isUpdating = false; // 更新中のフラグ
+      this.progressiveData = null; // 段階的読み込み用データ
+      this.loadedPoints = 0; // 現在読み込まれている点数
+      this.maxLoadedPoints = 0; // 最大読み込み点数
     }
 
     /**
@@ -589,6 +592,70 @@ const PointCloudViewer = forwardRef(({
           this.isUpdating = false;
         });
       }
+
+      // 段階的読み込みのチェック
+      this.checkProgressiveLoading(distance);
+    }
+
+    /**
+     * 段階的読み込みのチェック
+     * @param {number} distance - カメラからの距離
+     */
+    checkProgressiveLoading(distance) {
+      if (!this.progressiveData) return;
+
+      const lodConfig = this.lodLevels[this.currentLodLevel];
+      const requiredPoints = lodConfig.pointLimit;
+
+      // 必要な点数が現在の読み込み点数より多い場合、追加読み込み
+      if (requiredPoints > this.loadedPoints && this.loadedPoints < this.maxLoadedPoints) {
+        this.loadAdditionalPoints(requiredPoints);
+      }
+    }
+
+    /**
+     * 追加の点を読み込む
+     * @param {number} targetPoints - 目標点数
+     */
+    async loadAdditionalPoints(targetPoints) {
+      if (this.isUpdating) return;
+
+      this.isUpdating = true;
+      console.log(`段階的読み込み開始: ${this.loadedPoints} → ${targetPoints} 点`);
+
+      try {
+        const additionalPoints = Math.min(targetPoints - this.loadedPoints, 500000); // 最大50万点ずつ追加
+        const startIndex = this.loadedPoints;
+        const endIndex = Math.min(startIndex + additionalPoints, this.maxLoadedPoints);
+
+        // 追加の点を読み込む処理
+        await this.loadPointsFromData(startIndex, endIndex);
+        
+        this.loadedPoints = endIndex;
+        console.log(`段階的読み込み完了: ${this.loadedPoints} 点読み込み済み`);
+        
+        // LODを再適用
+        this.applyLOD();
+        
+      } catch (error) {
+        console.error('段階的読み込みエラー:', error);
+      } finally {
+        this.isUpdating = false;
+      }
+    }
+
+    /**
+     * データから指定範囲の点を読み込む
+     * @param {number} startIndex - 開始インデックス
+     * @param {number} endIndex - 終了インデックス
+     */
+    async loadPointsFromData(startIndex, endIndex) {
+      // この部分は実際のデータ読み込み処理を実装
+      // 現在はプレースホルダー
+      console.log(`点群データ読み込み: ${startIndex} - ${endIndex}`);
+      
+      // 非同期処理をシミュレート
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
 
     /**
@@ -684,6 +751,22 @@ const PointCloudViewer = forwardRef(({
     setPointCloud(pointCloud) {
       this.pointCloud = pointCloud;
       this.originalGeometry = pointCloud.geometry.clone();
+      
+      // 段階的読み込みの初期化
+      this.initializeProgressiveLoading();
+    }
+
+    /**
+     * 段階的読み込みの初期化
+     */
+    initializeProgressiveLoading() {
+      if (!this.originalGeometry) return;
+
+      const pointCount = this.originalGeometry.attributes.position.count;
+      this.maxLoadedPoints = pointCount;
+      this.loadedPoints = Math.min(pointCount, 1000000); // 初期は100万点まで読み込み
+      
+      console.log(`段階的読み込み初期化: 全点${pointCount.toLocaleString()}点, 初期読み込み${this.loadedPoints.toLocaleString()}点`);
     }
   }
 
