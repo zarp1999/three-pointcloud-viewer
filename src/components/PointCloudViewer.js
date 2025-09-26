@@ -52,11 +52,24 @@ const PointCloudViewer = forwardRef(({
   // 点群情報の状態
   const [pointCloudInfo, setPointCloudInfo] = useState(null);
 
+  // キーボード制御の状態
+  const [keys, setKeys] = useState({
+    ArrowUp: false,
+    ArrowDown: false,
+    ArrowLeft: false,
+    ArrowRight: false,
+    KeyW: false,
+    KeyS: false,
+    KeyA: false,
+    KeyD: false
+  });
+
   /**
    * コンポーネントの初期化
    */
   useEffect(() => {
     initThreeJS();
+    setupKeyboardControls();
     return () => {
       // クリーンアップ
       if (animationIdRef.current) {
@@ -68,6 +81,9 @@ const PointCloudViewer = forwardRef(({
       if (statsRef.current && statsRef.current.dom && statsRef.current.dom.parentNode) {
         statsRef.current.dom.parentNode.removeChild(statsRef.current.dom);
       }
+      // キーボードイベントリスナーを削除
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
     };
   }, []);
 
@@ -99,6 +115,87 @@ const PointCloudViewer = forwardRef(({
       material.needsUpdate = true;
     }
   }, [showColors]);
+
+  /**
+   * キーボード制御の設定
+   */
+  const setupKeyboardControls = () => {
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+  };
+
+  /**
+   * キーダウンイベントハンドラー
+   */
+  const handleKeyDown = (event) => {
+    const key = event.code;
+    if (keys.hasOwnProperty(key)) {
+      setKeys(prevKeys => ({
+        ...prevKeys,
+        [key]: true
+      }));
+    }
+  };
+
+  /**
+   * キーアップイベントハンドラー
+   */
+  const handleKeyUp = (event) => {
+    const key = event.code;
+    if (keys.hasOwnProperty(key)) {
+      setKeys(prevKeys => ({
+        ...prevKeys,
+        [key]: false
+      }));
+    }
+  };
+
+  /**
+   * キーボード入力に基づいてカメラを移動
+   */
+  const updateCameraFromKeyboard = () => {
+    if (!cameraRef.current || !controlsRef.current) return;
+
+    const moveSpeed = 0.1; // 移動速度
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    
+    // カメラの現在の方向を取得
+    const direction = new THREE.Vector3();
+    camera.getWorldDirection(direction);
+    
+    // 右方向ベクトルを計算
+    const right = new THREE.Vector3();
+    right.crossVectors(direction, camera.up).normalize();
+    
+    // 上方向ベクトル
+    const up = new THREE.Vector3(0, 1, 0);
+
+    // 移動ベクトルを初期化
+    const moveVector = new THREE.Vector3();
+
+    // 前後移動（W/S または 上/下矢印）
+    if (keys.KeyW || keys.ArrowUp) {
+      moveVector.add(direction.multiplyScalar(moveSpeed));
+    }
+    if (keys.KeyS || keys.ArrowDown) {
+      moveVector.add(direction.multiplyScalar(-moveSpeed));
+    }
+
+    // 左右移動（A/D または 左/右矢印）
+    if (keys.KeyA || keys.ArrowLeft) {
+      moveVector.add(right.multiplyScalar(-moveSpeed));
+    }
+    if (keys.KeyD || keys.ArrowRight) {
+      moveVector.add(right.multiplyScalar(moveSpeed));
+    }
+
+    // カメラとコントロールのターゲットを移動
+    if (moveVector.length() > 0) {
+      camera.position.add(moveVector);
+      controls.target.add(moveVector);
+    }
+  };
 
   /**
    * Three.jsの初期化
@@ -191,6 +288,9 @@ const PointCloudViewer = forwardRef(({
     if (statsRef.current) {
       statsRef.current.begin();
     }
+    
+    // キーボード入力に基づくカメラ移動
+    updateCameraFromKeyboard();
     
     if (controlsRef.current) {
       controlsRef.current.update();
