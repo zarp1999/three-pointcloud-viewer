@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import PointCloudViewer from './components/PointCloudViewer';
+import CesiumPointCloudViewer from './components/CesiumPointCloudViewer';
 import ControlsPanel from './components/ControlsPanel';
 import InfoPanel from './components/InfoPanel';
 import FileUpload from './components/FileUpload';
@@ -19,9 +20,11 @@ function App() {
   const [opacity, setOpacity] = useState(1.0);
   const [showColors, setShowColors] = useState(true);
   const [showStats, setShowStats] = useState(false);
+  const [useCesiumViewer, setUseCesiumViewer] = useState(false); // CesiumJSビューアの使用フラグ
   
   // Three.js関連の参照
   const viewerRef = useRef(null);
+  const cesiumViewerRef = useRef(null);
 
   /**
    * 点群情報を更新する
@@ -74,6 +77,14 @@ function App() {
   };
 
   /**
+   * CesiumJSビューアの切り替え
+   */
+  const handleToggleCesiumViewer = () => {
+    setUseCesiumViewer(!useCesiumViewer);
+    console.log(`CesiumJSビューア切り替え: ${!useCesiumViewer ? '有効' : '無効'}`);
+  };
+
+  /**
    * ビューをリセットする
    */
   const handleReset = () => {
@@ -95,14 +106,25 @@ function App() {
       </header>
       
       <div className="viewer-container">
-        <PointCloudViewer 
-          ref={viewerRef}
-          pointSize={pointSize}
-          opacity={opacity}
-          showColors={showColors}
-          onPointCloudLoaded={handlePointCloudLoaded}
-          onLoadingChange={handleLoadingChange}
-        />
+        {useCesiumViewer ? (
+          <CesiumPointCloudViewer 
+            ref={cesiumViewerRef}
+            pointSize={pointSize}
+            opacity={opacity}
+            showColors={showColors}
+            onPointCloudLoaded={handlePointCloudLoaded}
+            onLoadingChange={handleLoadingChange}
+          />
+        ) : (
+          <PointCloudViewer 
+            ref={viewerRef}
+            pointSize={pointSize}
+            opacity={opacity}
+            showColors={showColors}
+            onPointCloudLoaded={handlePointCloudLoaded}
+            onLoadingChange={handleLoadingChange}
+          />
+        )}
         {isLoading && (
           <div className="loading show">読み込み中...</div>
         )}
@@ -117,6 +139,7 @@ function App() {
         onOpacityChange={handleOpacityChange}
         onToggleColors={handleToggleColors}
         onToggleStats={handleToggleStats}
+        onToggleCesiumViewer={handleToggleCesiumViewer}
         onReset={handleReset}
       />
     </div>

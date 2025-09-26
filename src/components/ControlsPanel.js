@@ -12,7 +12,8 @@ const ControlsPanel = ({
   onOpacityChange,
   onToggleColors,
   onReset,
-  onToggleStats
+  onToggleStats,
+  onToggleCesiumViewer
 }) => {
   /**
    * 点のサイズが変更された時の処理
@@ -75,6 +76,11 @@ const ControlsPanel = ({
       <div className="control-group">
         <button onClick={onToggleStats}>
           Stats Panel 切り替え
+        </button>
+      </div>
+      <div className="control-group">
+        <button onClick={onToggleCesiumViewer}>
+          CesiumJSビューア切り替え
         </button>
       </div>
       <div className="control-group">
