@@ -12,7 +12,11 @@ const ControlsPanel = ({
   onOpacityChange,
   onToggleColors,
   onReset,
-  onToggleStats
+  onToggleStats,
+  onToggleMeasurement,
+  onClearMeasurement,
+  isMeasurementMode,
+  measurementDistance
 }) => {
   /**
    * 点のサイズが変更された時の処理
@@ -82,6 +86,38 @@ const ControlsPanel = ({
           リセット
         </button>
       </div>
+      
+      <h3>計測機能</h3>
+      <div className="control-group">
+        <button 
+          onClick={onToggleMeasurement}
+          style={{
+            background: isMeasurementMode ? '#e74c3c' : '#27ae60'
+          }}
+        >
+          {isMeasurementMode ? '計測モードを無効にする' : '計測モードを有効にする'}
+        </button>
+      </div>
+      {isMeasurementMode && (
+        <div className="control-group">
+          <button onClick={onClearMeasurement}>
+            計測をクリア
+          </button>
+        </div>
+      )}
+      {measurementDistance !== null && (
+        <div className="control-group">
+          <div style={{ 
+            background: '#f8f9fa', 
+            padding: '10px', 
+            borderRadius: '5px',
+            border: '1px solid #dee2e6'
+          }}>
+            <strong>計測結果:</strong><br/>
+            距離: {measurementDistance.toFixed(3)} 単位
+          </div>
+        </div>
+      )}
     </div>
   );
 };

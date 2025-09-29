@@ -48,9 +48,17 @@ const PointCloudViewer = forwardRef(({
   const animationIdRef = useRef(null);
   const statsRef = useRef(null);
   const lodManagerRef = useRef(null);
+  const raycasterRef = useRef(null);
+  const mouseRef = useRef(null);
 
   // 点群情報の状態
   const [pointCloudInfo, setPointCloudInfo] = useState(null);
+
+  // 距離計測機能の状態
+  const [isMeasurementMode, setIsMeasurementMode] = useState(false);
+  const [measurementPoints, setMeasurementPoints] = useState([]);
+  const [measurementDistance, setMeasurementDistance] = useState(null);
+  const [measurementLine, setMeasurementLine] = useState(null);
 
   /**
    * コンポーネントの初期化
@@ -136,6 +144,12 @@ const PointCloudViewer = forwardRef(({
     controls.dampingFactor = 0.05;
     controlsRef.current = controls;
 
+    // レイキャスターとマウスを初期化
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    raycasterRef.current = raycaster;
+    mouseRef.current = mouse;
+
     // ライティングを設定
     const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
     scene.add(ambientLight);
@@ -166,6 +180,9 @@ const PointCloudViewer = forwardRef(({
     // ウィンドウリサイズイベント
     window.addEventListener('resize', onWindowResize);
 
+    // マウスクリックイベント
+    renderer.domElement.addEventListener('click', onMouseClick);
+
     // アニメーションループを開始
     animate();
   };
@@ -178,6 +195,94 @@ const PointCloudViewer = forwardRef(({
       cameraRef.current.aspect = window.innerWidth / window.innerHeight;
       cameraRef.current.updateProjectionMatrix();
       rendererRef.current.setSize(window.innerWidth, window.innerHeight);
+    }
+  };
+
+  /**
+   * マウスクリックイベントハンドラー
+   */
+  const onMouseClick = (event) => {
+    if (!isMeasurementMode || !currentPointCloudRef.current || !cameraRef.current || !sceneRef.current) {
+      return;
+    }
+
+    // マウス位置を正規化デバイス座標に変換
+    const rect = event.target.getBoundingClientRect();
+    mouseRef.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouseRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    // レイキャスターを更新
+    raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
+
+    // 点群との交差を計算
+    const intersects = raycasterRef.current.intersectObject(currentPointCloudRef.current);
+
+    if (intersects.length > 0) {
+      const point = intersects[0].point;
+      addMeasurementPoint(point);
+    }
+  };
+
+  /**
+   * 計測点を追加
+   */
+  const addMeasurementPoint = (point) => {
+    const newPoints = [...measurementPoints, point];
+    setMeasurementPoints(newPoints);
+
+    if (newPoints.length === 2) {
+      // 2点が選択されたら距離を計算
+      const distance = point.distanceTo(newPoints[0]);
+      setMeasurementDistance(distance);
+      createMeasurementLine(newPoints[0], point);
+    } else if (newPoints.length > 2) {
+      // 3点目以降は最初の2点を保持
+      const firstTwoPoints = [newPoints[0], newPoints[1]];
+      setMeasurementPoints(firstTwoPoints);
+      const distance = firstTwoPoints[1].distanceTo(firstTwoPoints[0]);
+      setMeasurementDistance(distance);
+      createMeasurementLine(firstTwoPoints[0], firstTwoPoints[1]);
+    }
+  };
+
+  /**
+   * 計測線を作成
+   */
+  const createMeasurementLine = (point1, point2) => {
+    // 既存の計測線を削除
+    if (measurementLine && sceneRef.current) {
+      sceneRef.current.remove(measurementLine);
+    }
+
+    // 新しい計測線を作成
+    const geometry = new THREE.BufferGeometry().setFromPoints([point1, point2]);
+    const material = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 3 });
+    const line = new THREE.Line(geometry, material);
+    
+    setMeasurementLine(line);
+    sceneRef.current.add(line);
+  };
+
+  /**
+   * 計測モードを切り替え
+   */
+  const toggleMeasurementMode = () => {
+    setIsMeasurementMode(!isMeasurementMode);
+    if (!isMeasurementMode) {
+      // 計測モードを開始する際に既存の計測をクリア
+      clearMeasurement();
+    }
+  };
+
+  /**
+   * 計測をクリア
+   */
+  const clearMeasurement = () => {
+    setMeasurementPoints([]);
+    setMeasurementDistance(null);
+    if (measurementLine && sceneRef.current) {
+      sceneRef.current.remove(measurementLine);
+      setMeasurementLine(null);
     }
   };
 
@@ -747,7 +852,11 @@ const PointCloudViewer = forwardRef(({
       }
     },
     toggleStats,
-    resetView
+    resetView,
+    toggleMeasurementMode,
+    clearMeasurement,
+    isMeasurementMode,
+    measurementDistance
   }));
 
   return (
@@ -755,7 +864,33 @@ const PointCloudViewer = forwardRef(({
       id="point-cloud-viewer" 
       ref={containerRef}
       style={{ width: '100%', height: '100%' }}
-    />
+    >
+      {/* 計測モード表示 */}
+      {isMeasurementMode && (
+        <div style={{
+          position: 'absolute',
+          top: '10px',
+          right: '10px',
+          background: 'rgba(0, 0, 0, 0.7)',
+          color: 'white',
+          padding: '10px',
+          borderRadius: '5px',
+          fontSize: '14px',
+          zIndex: 1000
+        }}>
+          <div>計測モード: ON</div>
+          <div>クリックして2点を選択してください</div>
+          {measurementPoints.length > 0 && (
+            <div>選択済み: {measurementPoints.length}/2 点</div>
+          )}
+          {measurementDistance !== null && (
+            <div style={{ color: '#ff0000', fontWeight: 'bold' }}>
+              距離: {measurementDistance.toFixed(3)} 単位
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 });
 
