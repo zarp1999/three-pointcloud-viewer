@@ -59,6 +59,33 @@ const PointCloudViewer = forwardRef(({
   const [measurementPoints, setMeasurementPoints] = useState([]);
   const [measurementDistance, setMeasurementDistance] = useState(null);
   const [measurementLine, setMeasurementLine] = useState(null);
+  const [measurementMarkers, setMeasurementMarkers] = useState([]);
+  
+  // 計測モードの状態を同期するためのref
+  const isMeasurementModeRef = useRef(false);
+  const measurementPointsRef = useRef([]);
+  const measurementLineRef = useRef(null);
+  const measurementMarkersRef = useRef([]);
+
+  // 計測モードの状態をrefに同期
+  useEffect(() => {
+    isMeasurementModeRef.current = isMeasurementMode;
+  }, [isMeasurementMode]);
+
+  // 計測点の状態をrefに同期
+  useEffect(() => {
+    measurementPointsRef.current = measurementPoints;
+  }, [measurementPoints]);
+
+  // 計測線の状態をrefに同期
+  useEffect(() => {
+    measurementLineRef.current = measurementLine;
+  }, [measurementLine]);
+
+  // 計測マーカーの状態をrefに同期
+  useEffect(() => {
+    measurementMarkersRef.current = measurementMarkers;
+  }, [measurementMarkers]);
 
   /**
    * コンポーネントの初期化
@@ -202,7 +229,15 @@ const PointCloudViewer = forwardRef(({
    * マウスクリックイベントハンドラー
    */
   const onMouseClick = (event) => {
-    if (!isMeasurementMode || !currentPointCloudRef.current || !cameraRef.current || !sceneRef.current) {
+    console.log('マウスクリックイベント:', {
+      isMeasurementMode: isMeasurementModeRef.current,
+      hasPointCloud: !!currentPointCloudRef.current,
+      hasCamera: !!cameraRef.current,
+      hasScene: !!sceneRef.current
+    });
+
+    if (!isMeasurementModeRef.current || !currentPointCloudRef.current || !cameraRef.current || !sceneRef.current) {
+      console.log('計測モードが無効または必要な参照がありません');
       return;
     }
 
@@ -211,15 +246,21 @@ const PointCloudViewer = forwardRef(({
     mouseRef.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     mouseRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
+    console.log('マウス座標:', { x: mouseRef.current.x, y: mouseRef.current.y });
+
     // レイキャスターを更新
     raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
 
     // 点群との交差を計算
     const intersects = raycasterRef.current.intersectObject(currentPointCloudRef.current);
+    console.log('交差点数:', intersects.length);
 
     if (intersects.length > 0) {
       const point = intersects[0].point;
+      console.log('選択された点:', point);
       addMeasurementPoint(point);
+    } else {
+      console.log('点群との交差が見つかりませんでした');
     }
   };
 
@@ -227,12 +268,19 @@ const PointCloudViewer = forwardRef(({
    * 計測点を追加
    */
   const addMeasurementPoint = (point) => {
-    const newPoints = [...measurementPoints, point];
+    console.log('計測点を追加:', point);
+    const currentPoints = measurementPointsRef.current;
+    const newPoints = [...currentPoints, point];
     setMeasurementPoints(newPoints);
+    console.log('現在の計測点数:', newPoints.length);
+
+    // マーカーを作成
+    createMeasurementMarker(point, newPoints.length);
 
     if (newPoints.length === 2) {
       // 2点が選択されたら距離を計算
       const distance = point.distanceTo(newPoints[0]);
+      console.log('距離計算:', distance);
       setMeasurementDistance(distance);
       createMeasurementLine(newPoints[0], point);
     } else if (newPoints.length > 2) {
@@ -240,8 +288,62 @@ const PointCloudViewer = forwardRef(({
       const firstTwoPoints = [newPoints[0], newPoints[1]];
       setMeasurementPoints(firstTwoPoints);
       const distance = firstTwoPoints[1].distanceTo(firstTwoPoints[0]);
+      console.log('距離計算（3点目以降）:', distance);
       setMeasurementDistance(distance);
       createMeasurementLine(firstTwoPoints[0], firstTwoPoints[1]);
+    }
+  };
+
+  /**
+   * 計測マーカーを作成
+   */
+  const createMeasurementMarker = (point, index) => {
+    console.log('計測マーカーを作成:', { point, index });
+    
+    // 球体のジオメトリを作成（点群の点より少し大きめ）
+    const geometry = new THREE.SphereGeometry(0.1, 8, 8);
+    const material = new THREE.MeshBasicMaterial({ 
+      color: 0xff0000,
+      transparent: true,
+      opacity: 0.9
+    });
+    const sphere = new THREE.Mesh(geometry, material);
+    sphere.position.copy(point);
+    
+    // 番号を表示するためのスプライトを作成
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    canvas.width = 64;
+    canvas.height = 64;
+    
+    context.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    context.fillRect(0, 0, 64, 64);
+    context.fillStyle = '#000000';
+    context.font = 'bold 32px Arial';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillText(index.toString(), 32, 32);
+    
+    const texture = new THREE.CanvasTexture(canvas);
+    const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+    const sprite = new THREE.Sprite(spriteMaterial);
+    sprite.position.copy(point);
+    sprite.position.y += 0.2; // 球体の上に表示
+    sprite.scale.set(0.5, 0.5, 1);
+    
+    // マーカーをグループ化
+    const markerGroup = new THREE.Group();
+    markerGroup.add(sphere);
+    markerGroup.add(sprite);
+    
+    // シーンに追加
+    if (sceneRef.current) {
+      sceneRef.current.add(markerGroup);
+      setMeasurementMarkers(prev => {
+        const newMarkers = [...prev, markerGroup];
+        measurementMarkersRef.current = newMarkers;
+        return newMarkers;
+      });
     }
   };
 
@@ -249,8 +351,11 @@ const PointCloudViewer = forwardRef(({
    * 計測線を作成
    */
   const createMeasurementLine = (point1, point2) => {
+    console.log('計測線を作成:', { point1, point2 });
+    
     // 既存の計測線を削除
     if (measurementLine && sceneRef.current) {
+      console.log('既存の計測線を削除');
       sceneRef.current.remove(measurementLine);
     }
 
@@ -259,7 +364,9 @@ const PointCloudViewer = forwardRef(({
     const material = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 3 });
     const line = new THREE.Line(geometry, material);
     
+    console.log('新しい計測線をシーンに追加');
     setMeasurementLine(line);
+    measurementLineRef.current = line;
     sceneRef.current.add(line);
   };
 
@@ -267,9 +374,11 @@ const PointCloudViewer = forwardRef(({
    * 計測モードを切り替え
    */
   const toggleMeasurementMode = () => {
+    console.log('計測モード切り替え:', !isMeasurementMode);
     setIsMeasurementMode(!isMeasurementMode);
     if (!isMeasurementMode) {
       // 計測モードを開始する際に既存の計測をクリア
+      console.log('計測をクリア');
       clearMeasurement();
     }
   };
@@ -278,11 +387,26 @@ const PointCloudViewer = forwardRef(({
    * 計測をクリア
    */
   const clearMeasurement = () => {
+    console.log('計測をクリア中...');
     setMeasurementPoints([]);
     setMeasurementDistance(null);
-    if (measurementLine && sceneRef.current) {
-      sceneRef.current.remove(measurementLine);
+    
+    // 計測線を削除
+    if (measurementLineRef.current && sceneRef.current) {
+      console.log('計測線を削除');
+      sceneRef.current.remove(measurementLineRef.current);
       setMeasurementLine(null);
+      measurementLineRef.current = null;
+    }
+    
+    // マーカーを削除
+    if (sceneRef.current && measurementMarkersRef.current.length > 0) {
+      console.log('マーカーを削除:', measurementMarkersRef.current.length);
+      measurementMarkersRef.current.forEach(marker => {
+        sceneRef.current.remove(marker);
+      });
+      setMeasurementMarkers([]);
+      measurementMarkersRef.current = [];
     }
   };
 
@@ -885,7 +1009,7 @@ const PointCloudViewer = forwardRef(({
           )}
           {measurementDistance !== null && (
             <div style={{ color: '#ff0000', fontWeight: 'bold' }}>
-              距離: {measurementDistance.toFixed(3)} 単位
+              距離: {measurementDistance.toFixed(3)} m
             </div>
           )}
         </div>

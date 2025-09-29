@@ -114,7 +114,7 @@ const ControlsPanel = ({
             border: '1px solid #dee2e6'
           }}>
             <strong>計測結果:</strong><br/>
-            距離: {measurementDistance.toFixed(3)} 単位
+            距離: {measurementDistance.toFixed(3)} m
           </div>
         </div>
       )}
