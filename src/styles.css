@@ -347,3 +347,38 @@ header h1 {
         height: 14px;
     }
 }
+
+/* 計測機能のスタイル */
+.control-group button.active {
+    background: #e74c3c;
+    color: white;
+    border-color: #c0392b;
+}
+
+.control-group button.active:hover {
+    background: #c0392b;
+}
+
+.measurement-result {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 8px 12px;
+    font-weight: bold;
+    color: #2c3e50;
+    text-align: center;
+    margin-top: 8px;
+}
+
+.measurement-info {
+    background: #e8f4f8;
+    border: 1px solid #bee5eb;
+    border-radius: 4px;
+    padding: 8px 12px;
+    margin-top: 8px;
+    font-size: 0.9rem;
+}
+
+.measurement-info strong {
+    color: #0c5460;
+}

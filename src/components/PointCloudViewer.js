@@ -202,7 +202,15 @@ const PointCloudViewer = forwardRef(({
    * マウスクリックイベントハンドラー
    */
   const onMouseClick = (event) => {
+    console.log('マウスクリックイベント:', {
+      isMeasurementMode,
+      hasPointCloud: !!currentPointCloudRef.current,
+      hasCamera: !!cameraRef.current,
+      hasScene: !!sceneRef.current
+    });
+
     if (!isMeasurementMode || !currentPointCloudRef.current || !cameraRef.current || !sceneRef.current) {
+      console.log('計測モードが無効または必要な参照がありません');
       return;
     }
 
@@ -211,15 +219,22 @@ const PointCloudViewer = forwardRef(({
     mouseRef.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     mouseRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
+    console.log('マウス位置:', mouseRef.current);
+
     // レイキャスターを更新
     raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
 
     // 点群との交差を計算
     const intersects = raycasterRef.current.intersectObject(currentPointCloudRef.current);
 
+    console.log('交差点数:', intersects.length);
+
     if (intersects.length > 0) {
       const point = intersects[0].point;
+      console.log('選択された点:', point);
       addMeasurementPoint(point);
+    } else {
+      console.log('点群との交差がありません');
     }
   };
 
@@ -227,12 +242,15 @@ const PointCloudViewer = forwardRef(({
    * 計測点を追加
    */
   const addMeasurementPoint = (point) => {
+    console.log('計測点を追加:', point);
     const newPoints = [...measurementPoints, point];
     setMeasurementPoints(newPoints);
+    console.log('現在の計測点数:', newPoints.length);
 
     if (newPoints.length === 2) {
       // 2点が選択されたら距離を計算
       const distance = point.distanceTo(newPoints[0]);
+      console.log('距離計算:', distance);
       setMeasurementDistance(distance);
       createMeasurementLine(newPoints[0], point);
     } else if (newPoints.length > 2) {
@@ -249,6 +267,8 @@ const PointCloudViewer = forwardRef(({
    * 計測線を作成
    */
   const createMeasurementLine = (point1, point2) => {
+    console.log('計測線を作成:', point1, point2);
+    
     // 既存の計測線を削除
     if (measurementLine && sceneRef.current) {
       sceneRef.current.remove(measurementLine);
@@ -261,17 +281,20 @@ const PointCloudViewer = forwardRef(({
     
     setMeasurementLine(line);
     sceneRef.current.add(line);
+    console.log('計測線をシーンに追加しました');
   };
 
   /**
    * 計測モードを切り替え
    */
   const toggleMeasurementMode = () => {
+    console.log('計測モード切り替え:', !isMeasurementMode);
     setIsMeasurementMode(!isMeasurementMode);
     if (!isMeasurementMode) {
       // 計測モードを開始する際に既存の計測をクリア
       clearMeasurement();
     }
+    console.log('新しい計測モード状態:', !isMeasurementMode);
   };
 
   /**
