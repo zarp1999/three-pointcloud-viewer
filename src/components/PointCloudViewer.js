@@ -2,10 +2,10 @@
  * 点群データビューア - メインビューアコンポーネント
  * 
  * Three.jsを使用して3D点群データを表示するコアコンポーネントです。
- * LASファイルとPLYファイルの両方に対応し、大規模データの最適化機能も含みます。
+ * LAZファイルとPLYファイルの両方に対応し、大規模データの最適化機能も含みます。
  * 
  * 主な機能:
- * - LAS/PLYファイルの読み込みと解析
+ * - LAZ/PLYファイルの読み込みと解析
  * - 3D点群の表示とインタラクション
  * - 品質レベル調整（LODシステム）
  * - 色情報の表示/非表示切り替え
@@ -17,6 +17,7 @@ import * as THREE from 'three';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import Stats from 'three/examples/jsm/libs/stats.module.js';
+import pako from 'pako';
 
 /**
  * 点群ビューアコンポーネント
@@ -465,28 +466,34 @@ const PointCloudViewer = forwardRef(({
   };
 
   /**
-   * LASファイルを読み込む
-   * @param {File} file - LASファイル
+   * LAZファイルを読み込む
+   * @param {File} file - LAZファイル
    */
-  const loadLASFile = (file) => {
+  const loadLAZFile = (file) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
 
       reader.onload = async (event) => {
         try {
           const arrayBuffer = event.target.result;
-          const dataView = new DataView(arrayBuffer);
 
-          console.log('LASファイルを読み込み中...', file.name);
+          console.log('LAZファイルを読み込み中...', file.name);
+
+          // LAZファイルの圧縮を解除
+          console.log('LAZファイルの圧縮を解除中...');
+          const decompressedData = pako.inflate(new Uint8Array(arrayBuffer));
+          const dataView = new DataView(decompressedData.buffer);
+
+          console.log('圧縮解除完了。LASデータを解析中...');
 
           // LASファイルのヘッダーを解析
           const header = parseLASHeader(dataView);
 
           if (!header) {
-            throw new Error('LASファイルのヘッダーが正しく解析できませんでした。');
+            throw new Error('LAZファイルのヘッダーが正しく解析できませんでした。');
           }
 
-          console.log('LASヘッダー情報:', header);
+          console.log('LAZヘッダー情報:', header);
           console.log(`Point Data Format: ${header.pointDataFormat}`);
           console.log(`Point Data Record Length: ${header.pointDataRecordLength}`);
           console.log(`Total Points: ${header.totalPoints}`);
@@ -536,8 +543,8 @@ const PointCloudViewer = forwardRef(({
           createPointCloud(geometry);
           resolve();
         } catch (error) {
-          console.error('LASファイル読み込みエラー:', error);
-          reject(new Error('LASファイルの読み込みに失敗しました: ' + error.message));
+          console.error('LAZファイル読み込みエラー:', error);
+          reject(new Error('LAZファイルの読み込みに失敗しました: ' + error.message));
         }
       };
 
@@ -961,10 +968,10 @@ const PointCloudViewer = forwardRef(({
 
         if (fileExtension === 'ply') {
           await loadPLYFile(file);
-        } else if (fileExtension === 'las') {
-          await loadLASFile(file);
+        } else if (fileExtension === 'laz') {
+          await loadLAZFile(file);
         } else {
-          throw new Error('サポートされていないファイル形式です。PLYまたはLASファイルを選択してください。');
+          throw new Error('サポートされていないファイル形式です。PLYまたはLAZファイルを選択してください。');
         }
       } catch (error) {
         console.error('点群データの読み込みエラー:', error);
