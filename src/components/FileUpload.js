@@ -2,7 +2,7 @@ import React, { useRef } from 'react';
 
 /**
  * ファイルアップロードコンポーネント
- * 点群ファイル（PLY、LAZ）の選択と読み込みを担当
+ * 点群ファイル（LAS）の選択と読み込みを担当
  */
 const FileUpload = ({ onFileLoad, onLoadingChange, viewerRef }) => {
   const fileInputRef = useRef(null);
@@ -39,7 +39,7 @@ const FileUpload = ({ onFileLoad, onLoadingChange, viewerRef }) => {
       <input 
         type="file" 
         id="fileInput" 
-        accept=".laz,.ply" 
+        accept=".las" 
         ref={fileInputRef}
         onChange={handleFileChange}
         style={{ display: 'none' }}

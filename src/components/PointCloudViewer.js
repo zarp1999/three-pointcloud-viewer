@@ -2,10 +2,10 @@
  * 点群データビューア - メインビューアコンポーネント
  * 
  * Three.jsを使用して3D点群データを表示するコアコンポーネントです。
- * LAZファイルとPLYファイルの両方に対応し、大規模データの最適化機能も含みます。
+ * LASファイルのみに対応し、大規模データの最適化機能も含みます。
  * 
  * 主な機能:
- * - LAZ/PLYファイルの読み込みと解析
+ * - LASファイルの読み込みと解析
  * - 3D点群の表示とインタラクション
  * - 品質レベル調整（LODシステム）
  * - 色情報の表示/非表示切り替え
@@ -14,10 +14,8 @@
 
 import React, { forwardRef, useImperativeHandle, useRef, useEffect, useState } from 'react';
 import * as THREE from 'three';
-import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import Stats from 'three/examples/jsm/libs/stats.module.js';
-import pako from 'pako';
 
 /**
  * 点群ビューアコンポーネント
@@ -441,29 +439,6 @@ const PointCloudViewer = forwardRef(({
     }
   };
 
-  /**
-   * PLYファイルを読み込む
-   * @param {File} file - PLYファイル
-   */
-  const loadPLYFile = (file) => {
-    return new Promise((resolve, reject) => {
-      const loader = new PLYLoader();
-      const reader = new FileReader();
-
-      reader.onload = (event) => {
-        try {
-          const geometry = loader.parse(event.target.result);
-          createPointCloud(geometry);
-          resolve();
-        } catch (error) {
-          reject(error);
-        }
-      };
-
-      reader.onerror = () => reject(new Error('ファイルの読み込みに失敗しました。'));
-      reader.readAsText(file);
-    });
-  };
 
   /**
    * LASファイルを読み込む
@@ -553,9 +528,11 @@ const PointCloudViewer = forwardRef(({
             }
           }
 
+          console.log('座標正規化処理完了');
           geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
           geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
+          console.log('点群の作成を開始...');
           createPointCloud(geometry);
           resolve();
         } catch (error) {
@@ -569,93 +546,6 @@ const PointCloudViewer = forwardRef(({
     });
   };
 
-  /**
-   * LAZファイルを読み込む
-   * @param {File} file - LAZファイル
-   */
-  const loadLAZFile = (file) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-
-      reader.onload = async (event) => {
-        try {
-          const arrayBuffer = event.target.result;
-
-          console.log('LAZファイルを読み込み中...', file.name);
-
-          // LAZファイルの圧縮を解除
-          console.log('LAZファイルの圧縮を解除中...');
-          const decompressedData = pako.inflate(new Uint8Array(arrayBuffer));
-          const dataView = new DataView(decompressedData.buffer);
-
-          console.log('圧縮解除完了。LASデータを解析中...');
-
-          // LASファイルのヘッダーを解析
-          const header = parseLASHeader(dataView);
-
-          if (!header) {
-            throw new Error('LAZファイルのヘッダーが正しく解析できませんでした。');
-          }
-
-          console.log('LAZヘッダー情報:', header);
-          console.log(`Point Data Format: ${header.pointDataFormat}`);
-          console.log(`Point Data Record Length: ${header.pointDataRecordLength}`);
-          console.log(`Total Points: ${header.totalPoints}`);
-
-          // 点群データを解析（LODシステムが自動調整）
-          const points = parseLASPoints(dataView, header);
-
-          console.log('取得した点群数:', points.length);
-
-          if (points.length === 0) {
-            throw new Error('点群データが見つかりませんでした。');
-          }
-
-          // Three.jsのジオメトリを作成
-          const geometry = new THREE.BufferGeometry();
-
-          // 位置データを設定
-          const positions = new Float32Array(points.length * 3);
-          const colors = new Float32Array(points.length * 3);
-
-          for (let i = 0; i < points.length; i++) {
-            const point = points[i];
-            const i3 = i * 3;
-
-            // 位置（スケールとオフセットを適用）
-            positions[i3] = point.x * header.xScale + header.xOffset;
-            positions[i3 + 1] = point.y * header.yScale + header.yOffset;
-            positions[i3 + 2] = point.z * header.zScale + header.zOffset;
-
-            // 色（RGB）- 既に正規化されているのでそのまま使用
-            if (point.red !== undefined && point.green !== undefined && point.blue !== undefined) {
-              colors[i3] = point.red;
-              colors[i3 + 1] = point.green;
-              colors[i3 + 2] = point.blue;
-            } else {
-              // 色情報がない場合は高さに基づいて色を設定
-              const normalizedHeight = (positions[i3 + 2] - header.minZ) / (header.maxZ - header.minZ);
-              colors[i3] = normalizedHeight;
-              colors[i3 + 1] = 1.0 - normalizedHeight;
-              colors[i3 + 2] = 0.5;
-            }
-          }
-
-          geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-          geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-          createPointCloud(geometry);
-          resolve();
-        } catch (error) {
-          console.error('LAZファイル読み込みエラー:', error);
-          reject(new Error('LAZファイルの読み込みに失敗しました: ' + error.message));
-        }
-      };
-
-      reader.onerror = () => reject(new Error('ファイルの読み込みに失敗しました。'));
-      reader.readAsArrayBuffer(file);
-    });
-  };
 
   /**
    * LASファイルのヘッダーを解析する
@@ -1086,25 +976,10 @@ const PointCloudViewer = forwardRef(({
       try {
         const fileExtension = file.name.split('.').pop().toLowerCase();
 
-        if (fileExtension === 'ply') {
-          await loadPLYFile(file);
-        } else if (fileExtension === 'laz') {
-          // ファイルのヘッダーを確認してLASファイルかLAZファイルかを判定
-          const arrayBuffer = await file.arrayBuffer();
-          const dataView = new DataView(arrayBuffer);
-          const header = String.fromCharCode(dataView.getUint8(0), dataView.getUint8(1), dataView.getUint8(2), dataView.getUint8(3));
-          
-          if (header === 'LASF') {
-            // LASファイルとして読み込み
-            console.log('ファイルはLASファイルとして読み込みます');
-            await loadLASFile(file);
-          } else {
-            // LAZファイルとして読み込み
-            console.log('ファイルはLAZファイルとして読み込みます');
-            await loadLAZFile(file);
-          }
+        if (fileExtension === 'las') {
+          await loadLASFile(file);
         } else {
-          throw new Error('サポートされていないファイル形式です。PLYまたはLAZファイルを選択してください。');
+          throw new Error('サポートされていないファイル形式です。LASファイルを選択してください。');
         }
       } catch (error) {
         console.error('点群データの読み込みエラー:', error);
