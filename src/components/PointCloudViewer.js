@@ -466,6 +466,110 @@ const PointCloudViewer = forwardRef(({
   };
 
   /**
+   * LASファイルを読み込む
+   * @param {File} file - LASファイル
+   */
+  const loadLASFile = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+
+      reader.onload = async (event) => {
+        try {
+          const arrayBuffer = event.target.result;
+          const dataView = new DataView(arrayBuffer);
+
+          console.log('LASファイルを読み込み中...', file.name);
+
+          // LASファイルのヘッダーを解析
+          const header = parseLASHeader(dataView);
+
+          if (!header) {
+            throw new Error('LASファイルのヘッダーが正しく解析できませんでした。');
+          }
+
+          console.log('LASヘッダー情報:', header);
+          console.log(`Point Data Format: ${header.pointDataFormat}`);
+          console.log(`Point Data Record Length: ${header.pointDataRecordLength}`);
+          console.log(`Total Points: ${header.totalPoints}`);
+
+          // 点群データを解析（LODシステムが自動調整）
+          const points = parseLASPoints(dataView, header);
+
+          console.log('取得した点群数:', points.length);
+
+          if (points.length === 0) {
+            throw new Error('点群データが見つかりませんでした。');
+          }
+
+          // Three.jsのジオメトリを作成
+          const geometry = new THREE.BufferGeometry();
+
+          // 位置データを設定
+          const positions = new Float32Array(points.length * 3);
+          const colors = new Float32Array(points.length * 3);
+
+          // 座標の中心を計算（ヘッダー情報から）
+          const centerX = (header.maxX + header.minX) / 2;
+          const centerY = (header.maxY + header.minY) / 2;
+          const centerZ = (header.maxZ + header.minZ) / 2;
+          
+          console.log(`座標範囲: X[${header.minX}, ${header.maxX}], Y[${header.minY}, ${header.maxY}], Z[${header.minZ}, ${header.maxZ}]`);
+          console.log(`座標中心: (${centerX.toFixed(3)}, ${centerY.toFixed(3)}, ${centerZ.toFixed(3)})`);
+
+          for (let i = 0; i < points.length; i++) {
+            const point = points[i];
+            const i3 = i * 3;
+
+            // 位置（スケールとオフセットを適用）
+            const worldX = point.x * header.xScale + header.xOffset;
+            const worldY = point.y * header.yScale + header.yOffset;
+            const worldZ = point.z * header.zScale + header.zOffset;
+            
+            // 座標を中心からの相対位置に変換（正規化）
+            const normalizedX = worldX - centerX;
+            const normalizedY = worldY - centerY;
+            const normalizedZ = worldZ - centerZ;
+            
+            positions[i3] = normalizedX;
+            positions[i3 + 1] = normalizedY;
+            positions[i3 + 2] = normalizedZ;
+            
+            // デバッグ用：最初の数点の座標をログ出力
+            if (i < 10) {
+              console.log(`点 ${i}: 生データ(${point.x}, ${point.y}, ${point.z}) -> 世界座標(${worldX.toFixed(3)}, ${worldY.toFixed(3)}, ${worldZ.toFixed(3)}) -> 正規化座標(${normalizedX.toFixed(3)}, ${normalizedY.toFixed(3)}, ${normalizedZ.toFixed(3)})`);
+            }
+
+            // 色（RGB）- 既に正規化されているのでそのまま使用
+            if (point.red !== undefined && point.green !== undefined && point.blue !== undefined) {
+              colors[i3] = point.red;
+              colors[i3 + 1] = point.green;
+              colors[i3 + 2] = point.blue;
+            } else {
+              // 色情報がない場合は高さに基づいて色を設定
+              const normalizedHeight = (normalizedZ - (header.minZ - centerZ)) / ((header.maxZ - centerZ) - (header.minZ - centerZ));
+              colors[i3] = Math.max(0, Math.min(1, normalizedHeight));
+              colors[i3 + 1] = Math.max(0, Math.min(1, 1.0 - normalizedHeight));
+              colors[i3 + 2] = 0.5;
+            }
+          }
+
+          geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+          geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+          createPointCloud(geometry);
+          resolve();
+        } catch (error) {
+          console.error('LASファイル読み込みエラー:', error);
+          reject(new Error('LASファイルの読み込みに失敗しました: ' + error.message));
+        }
+      };
+
+      reader.onerror = () => reject(new Error('ファイルの読み込みに失敗しました。'));
+      reader.readAsArrayBuffer(file);
+    });
+  };
+
+  /**
    * LAZファイルを読み込む
    * @param {File} file - LAZファイル
    */
@@ -679,6 +783,12 @@ const PointCloudViewer = forwardRef(({
     for (let i = 0; i < maxPoints; i += step) {
       const recordOffset = offset + (i * recordLength);
 
+      // データ範囲チェック
+      if (recordOffset + recordLength > dataView.byteLength) {
+        console.log(`点 ${i} の読み込みに失敗: データ範囲外 (オフセット: ${recordOffset}, レコード長: ${recordLength}, データ長: ${dataView.byteLength})`);
+        break;
+      }
+
       try {
         // 位置データを読み取り（Little Endian）
         const x = dataView.getInt32(recordOffset, true);
@@ -687,8 +797,8 @@ const PointCloudViewer = forwardRef(({
 
         const point = { x, y, z };
 
-        // 色情報がある場合（Point Data Format 2, 3, 5, 6, 7, 8, 10）
-        if ([2, 3, 5, 6, 7, 8, 10].includes(pointDataFormat)) {
+        // 色情報がある場合（Point Data Format 2, 3, 5, 6, 7, 8, 10, 135）
+        if ([2, 3, 5, 6, 7, 8, 10, 135].includes(pointDataFormat)) {
           let colorOffset = 20; // デフォルトの色情報オフセット
 
           // 各フォーマットでの色情報の位置を正確に設定
@@ -713,6 +823,9 @@ const PointCloudViewer = forwardRef(({
               break;
             case 10:
               colorOffset = 28; // RGB情報のオフセット（X,Y,Z,Intensity,Return,Class,ScanAngle,UserData,PointSourceID,GPS_Time,Red,Green,Blue）
+              break;
+            case 135:
+              colorOffset = 20; // 拡張フォーマット135の色情報オフセット（仮定）
               break;
           }
 
@@ -886,10 +999,10 @@ const PointCloudViewer = forwardRef(({
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
 
-    // マテリアルを作成
+    // マテリアルを作成（点のサイズを大きくして視認性を向上）
     const material = new THREE.PointsMaterial({
       vertexColors: showColors,
-      size: pointSize,
+      size: Math.max(pointSize, 2.0), // 最小サイズを2.0に設定
       transparent: true,
       opacity: opacity
     });
@@ -908,13 +1021,20 @@ const PointCloudViewer = forwardRef(({
     const center = geometry.boundingSphere.center;
     const radius = geometry.boundingSphere.radius;
 
+    console.log(`点群の中心: (${center.x.toFixed(3)}, ${center.y.toFixed(3)}, ${center.z.toFixed(3)})`);
+    console.log(`点群の半径: ${radius.toFixed(3)}`);
+
+    // カメラを点群の外側に配置
+    const distance = Math.max(radius * 3, 100); // 最小距離を100に設定
     cameraRef.current.position.set(
-      center.x + radius * 2,
-      center.y + radius * 2,
-      center.z + radius * 2
+      center.x + distance,
+      center.y + distance,
+      center.z + distance
     );
     controlsRef.current.target.copy(center);
     controlsRef.current.update();
+    
+    console.log(`カメラ位置: (${cameraRef.current.position.x.toFixed(3)}, ${cameraRef.current.position.y.toFixed(3)}, ${cameraRef.current.position.z.toFixed(3)})`);
 
     // 点群情報を保存
     const info = {
@@ -969,7 +1089,20 @@ const PointCloudViewer = forwardRef(({
         if (fileExtension === 'ply') {
           await loadPLYFile(file);
         } else if (fileExtension === 'laz') {
-          await loadLAZFile(file);
+          // ファイルのヘッダーを確認してLASファイルかLAZファイルかを判定
+          const arrayBuffer = await file.arrayBuffer();
+          const dataView = new DataView(arrayBuffer);
+          const header = String.fromCharCode(dataView.getUint8(0), dataView.getUint8(1), dataView.getUint8(2), dataView.getUint8(3));
+          
+          if (header === 'LASF') {
+            // LASファイルとして読み込み
+            console.log('ファイルはLASファイルとして読み込みます');
+            await loadLASFile(file);
+          } else {
+            // LAZファイルとして読み込み
+            console.log('ファイルはLAZファイルとして読み込みます');
+            await loadLAZFile(file);
+          }
         } else {
           throw new Error('サポートされていないファイル形式です。PLYまたはLAZファイルを選択してください。');
         }
