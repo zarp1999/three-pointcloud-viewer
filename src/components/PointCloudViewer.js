@@ -2,10 +2,11 @@
  * 点群データビューア - メインビューアコンポーネント
  * 
  * Three.jsを使用して3D点群データを表示するコアコンポーネントです。
- * LASファイルのみに対応し、大規模データの最適化機能も含みます。
+ * LASファイルとGeoTIFFファイルに対応し、大規模データの最適化機能も含みます。
  * 
  * 主な機能:
  * - LASファイルの読み込みと解析
+ * - GeoTIFFファイルの読み込みと3D地形表示
  * - 3D点群の表示とインタラクション
  * - 品質レベル調整（LODシステム）
  * - 色情報の表示/非表示切り替え
@@ -16,6 +17,7 @@ import React, { forwardRef, useImperativeHandle, useRef, useEffect, useState } f
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import Stats from 'three/examples/jsm/libs/stats.module.js';
+import { fromArrayBuffer } from 'geotiff';
 
 /**
  * 点群ビューアコンポーネント
@@ -546,6 +548,209 @@ const PointCloudViewer = forwardRef(({
     });
   };
 
+  /**
+   * GeoTIFFファイルを読み込んで3D地形を表示
+   * @param {File} file - GeoTIFFファイル
+   */
+  const loadGeoTIFFFile = async (file) => {
+    try {
+      console.log('GeoTIFFファイルを読み込み中...', file.name);
+
+      const arrayBuffer = await file.arrayBuffer();
+      const tiff = await fromArrayBuffer(arrayBuffer);
+      const image = await tiff.getImage();
+      
+      // 画像のサイズを取得
+      const width = image.getWidth();
+      const height = image.getHeight();
+      
+      console.log(`GeoTIFF画像サイズ: ${width} x ${height}`);
+      
+      // 標高データを読み込み
+      const elevationData = await image.readRasters();
+      const elevationArray = elevationData[0]; // 最初のバンド（標高データ）
+      
+      // 地理情報を取得
+      const bbox = image.getBoundingBox();
+      const pixelWidth = image.getWidth();
+      const pixelHeight = image.getHeight();
+      
+      console.log('GeoTIFF境界:', bbox);
+      console.log(`ピクセルサイズ: ${pixelWidth} x ${pixelHeight}`);
+      
+      // 標高データの統計を計算
+      const minElevation = Math.min(...elevationArray);
+      const maxElevation = Math.max(...elevationArray);
+      console.log(`標高範囲: ${minElevation.toFixed(2)}m - ${maxElevation.toFixed(2)}m`);
+      
+      // 3D地形メッシュを生成
+      const geometry = createTerrainMesh(elevationArray, width, height, bbox);
+      
+      // 地形を表示
+      createTerrainSurface(geometry, minElevation, maxElevation);
+      
+    } catch (error) {
+      console.error('GeoTIFFファイル読み込みエラー:', error);
+      throw new Error('GeoTIFFファイルの読み込みに失敗しました: ' + error.message);
+    }
+  };
+
+  /**
+   * 標高データから3D地形メッシュを生成
+   * @param {Array} elevationData - 標高データ配列
+   * @param {number} width - 画像幅
+   * @param {number} height - 画像高さ
+   * @param {Array} bbox - 地理的境界 [minX, minY, maxX, maxY]
+   * @returns {THREE.BufferGeometry} 地形メッシュのジオメトリ
+   */
+  const createTerrainMesh = (elevationData, width, height, bbox) => {
+    const geometry = new THREE.BufferGeometry();
+    
+    // 頂点配列を作成
+    const vertices = [];
+    const colors = [];
+    const indices = [];
+    
+    // 地理座標から3D座標への変換
+    const minX = bbox[0];
+    const minY = bbox[1];
+    const maxX = bbox[2];
+    const maxY = bbox[3];
+    
+    const scaleX = (maxX - minX) / (width - 1);
+    const scaleY = (maxY - minY) / (height - 1);
+    
+    // 標高の正規化用
+    const minElevation = Math.min(...elevationData);
+    const maxElevation = Math.max(...elevationData);
+    const elevationRange = maxElevation - minElevation;
+    
+    // 頂点と色を生成
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const index = y * width + x;
+        const elevation = elevationData[index];
+        
+        // 3D座標を計算
+        const worldX = minX + x * scaleX;
+        const worldY = minY + y * scaleY;
+        const worldZ = elevation;
+        
+        vertices.push(worldX, worldY, worldZ);
+        
+        // 標高に基づく色を計算
+        const normalizedElevation = (elevation - minElevation) / elevationRange;
+        const color = getTerrainColor(normalizedElevation);
+        colors.push(color.r, color.g, color.b);
+      }
+    }
+    
+    // インデックスを生成（三角形メッシュ）
+    for (let y = 0; y < height - 1; y++) {
+      for (let x = 0; x < width - 1; x++) {
+        const topLeft = y * width + x;
+        const topRight = topLeft + 1;
+        const bottomLeft = (y + 1) * width + x;
+        const bottomRight = bottomLeft + 1;
+        
+        // 2つの三角形を作成
+        indices.push(topLeft, bottomLeft, topRight);
+        indices.push(topRight, bottomLeft, bottomRight);
+      }
+    }
+    
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    geometry.setIndex(indices);
+    
+    // 法線を計算
+    geometry.computeVertexNormals();
+    
+    return geometry;
+  };
+
+  /**
+   * 標高に基づく地形色を取得
+   * @param {number} normalizedElevation - 正規化された標高 (0-1)
+   * @returns {Object} RGB色オブジェクト
+   */
+  const getTerrainColor = (normalizedElevation) => {
+    // 地形の色分け（低地から高地へ）
+    if (normalizedElevation < 0.1) {
+      // 海・湖（青）
+      return { r: 0.2, g: 0.4, b: 0.8 };
+    } else if (normalizedElevation < 0.3) {
+      // 平地・草原（緑）
+      return { r: 0.3, g: 0.7, b: 0.3 };
+    } else if (normalizedElevation < 0.6) {
+      // 丘陵（黄緑）
+      return { r: 0.6, g: 0.8, b: 0.4 };
+    } else if (normalizedElevation < 0.8) {
+      // 山地（茶色）
+      return { r: 0.6, g: 0.4, b: 0.2 };
+    } else {
+      // 高山（白）
+      return { r: 0.9, g: 0.9, b: 0.9 };
+    }
+  };
+
+  /**
+   * 3D地形表面を作成して表示
+   * @param {THREE.BufferGeometry} geometry - 地形メッシュのジオメトリ
+   * @param {number} minElevation - 最小標高
+   * @param {number} maxElevation - 最大標高
+   */
+  const createTerrainSurface = (geometry, minElevation, maxElevation) => {
+    // 既存の地形を削除
+    if (currentPointCloudRef.current && sceneRef.current) {
+      sceneRef.current.remove(currentPointCloudRef.current);
+    }
+
+    // 境界を計算
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+
+    // マテリアルを作成
+    const material = new THREE.MeshLambertMaterial({
+      vertexColors: true,
+      side: THREE.DoubleSide
+    });
+
+    // 地形メッシュを作成
+    const terrainMesh = new THREE.Mesh(geometry, material);
+    currentPointCloudRef.current = terrainMesh;
+    sceneRef.current.add(terrainMesh);
+
+    // カメラを地形の中心に移動
+    const center = geometry.boundingSphere.center;
+    const radius = geometry.boundingSphere.radius;
+
+    console.log(`地形の中心: (${center.x.toFixed(3)}, ${center.y.toFixed(3)}, ${center.z.toFixed(3)})`);
+    console.log(`地形の半径: ${radius.toFixed(3)}`);
+
+    // カメラを地形の外側に配置
+    const distance = Math.max(radius * 2, 100);
+    cameraRef.current.position.set(
+      center.x + distance,
+      center.y + distance,
+      center.z + distance * 0.5
+    );
+    controlsRef.current.target.copy(center);
+    controlsRef.current.update();
+
+    // 地形情報を保存
+    const info = {
+      type: 'terrain',
+      count: geometry.attributes.position.count,
+      bounds: geometry.boundingBox,
+      center: center,
+      radius: radius,
+      elevationRange: { min: minElevation, max: maxElevation }
+    };
+    setPointCloudInfo(info);
+    onPointCloudLoaded(info);
+  };
+
 
   /**
    * LASファイルのヘッダーを解析する
@@ -978,8 +1183,10 @@ const PointCloudViewer = forwardRef(({
 
         if (fileExtension === 'las') {
           await loadLASFile(file);
+        } else if (fileExtension === 'tif' || fileExtension === 'tiff') {
+          await loadGeoTIFFFile(file);
         } else {
-          throw new Error('サポートされていないファイル形式です。LASファイルを選択してください。');
+          throw new Error('サポートされていないファイル形式です。LASファイルまたはGeoTIFFファイルを選択してください。');
         }
       } catch (error) {
         console.error('点群データの読み込みエラー:', error);

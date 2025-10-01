@@ -1,7 +1,7 @@
 {
   "name": "three-pointcloud-viewer",
   "version": "2.0.0",
-  "description": "React + Three.jsを使用した高機能点群データビューア - LASファイル対応、LODシステム、大規模データ最適化",
+  "description": "React + Three.jsを使用した高機能点群データビューア - LASファイル・GeoTIFFファイル対応、LODシステム、大規模データ最適化",
   "main": "src/index.js",
   "scripts": {
     "start": "npx http-server -p 8080 -c-1",
@@ -13,6 +13,9 @@
     "three.js",
     "react",
     "las",
+    "geotiff",
+    "dem",
+    "terrain",
     "visualization",
     "3d",
     "lidar",
@@ -37,6 +40,7 @@
     "webpack-dev-server": "^4.15.0"
   },
   "dependencies": {
+    "geotiff": "^2.0.7",
     "potree-core": "^2.0.11",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

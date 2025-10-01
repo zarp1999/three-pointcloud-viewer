@@ -2,7 +2,7 @@ import React, { useRef } from 'react';
 
 /**
  * ファイルアップロードコンポーネント
- * 点群ファイル（LAS）の選択と読み込みを担当
+ * 点群ファイル（LAS）と地形ファイル（GeoTIFF）の選択と読み込みを担当
  */
 const FileUpload = ({ onFileLoad, onLoadingChange, viewerRef }) => {
   const fileInputRef = useRef(null);
@@ -39,13 +39,13 @@ const FileUpload = ({ onFileLoad, onLoadingChange, viewerRef }) => {
       <input 
         type="file" 
         id="fileInput" 
-        accept=".las" 
+        accept=".las,.tif,.tiff" 
         ref={fileInputRef}
         onChange={handleFileChange}
         style={{ display: 'none' }}
       />
       <button onClick={handleLoadButtonClick}>
-        点群データを読み込み
+        データを読み込み（LAS/GeoTIFF）
       </button>
     </div>
   );
