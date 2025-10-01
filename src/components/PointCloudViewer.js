@@ -578,14 +578,29 @@ const PointCloudViewer = forwardRef(({
       console.log('GeoTIFF境界:', bbox);
       console.log(`ピクセルサイズ: ${pixelWidth} x ${pixelHeight}`);
       
-      // 標高データの統計を計算（大きな配列の場合は安全に処理）
-      let minElevation = elevationArray[0];
-      let maxElevation = elevationArray[0];
+      // 標高データの統計を計算（無効な値を除外して安全に処理）
+      let minElevation = null;
+      let maxElevation = null;
       
-      for (let i = 1; i < elevationArray.length; i++) {
+      // 有効な標高値を探す
+      for (let i = 0; i < elevationArray.length; i++) {
         const elevation = elevationArray[i];
-        if (elevation < minElevation) minElevation = elevation;
-        if (elevation > maxElevation) maxElevation = elevation;
+        if (elevation !== null && elevation !== undefined && !isNaN(elevation) && isFinite(elevation)) {
+          if (minElevation === null) {
+            minElevation = elevation;
+            maxElevation = elevation;
+          } else {
+            if (elevation < minElevation) minElevation = elevation;
+            if (elevation > maxElevation) maxElevation = elevation;
+          }
+        }
+      }
+      
+      // 有効な標高値が見つからない場合のデフォルト値
+      if (minElevation === null || maxElevation === null) {
+        minElevation = 0;
+        maxElevation = 100;
+        console.warn('有効な標高データが見つかりません。デフォルト値を使用します。');
       }
       
       console.log(`標高範囲: ${minElevation.toFixed(2)}m - ${maxElevation.toFixed(2)}m`);
@@ -641,14 +656,29 @@ const PointCloudViewer = forwardRef(({
     const scaleX = (maxX - minX) / (width - 1);
     const scaleY = (maxY - minY) / (height - 1);
     
-    // 標高の正規化用（大きな配列の場合は安全に処理）
-    let minElevation = elevationData[0];
-    let maxElevation = elevationData[0];
+    // 標高の正規化用（無効な値を除外して安全に処理）
+    let minElevation = null;
+    let maxElevation = null;
     
-    for (let i = 1; i < elevationData.length; i++) {
+    // 有効な標高値を探す
+    for (let i = 0; i < elevationData.length; i++) {
       const elevation = elevationData[i];
-      if (elevation < minElevation) minElevation = elevation;
-      if (elevation > maxElevation) maxElevation = elevation;
+      if (elevation !== null && elevation !== undefined && !isNaN(elevation) && isFinite(elevation)) {
+        if (minElevation === null) {
+          minElevation = elevation;
+          maxElevation = elevation;
+        } else {
+          if (elevation < minElevation) minElevation = elevation;
+          if (elevation > maxElevation) maxElevation = elevation;
+        }
+      }
+    }
+    
+    // 有効な標高値が見つからない場合のデフォルト値
+    if (minElevation === null || maxElevation === null) {
+      minElevation = 0;
+      maxElevation = 100;
+      console.warn('有効な標高データが見つかりません。デフォルト値を使用します。');
     }
     
     const elevationRange = maxElevation - minElevation;
@@ -657,17 +687,28 @@ const PointCloudViewer = forwardRef(({
     for (let y = 0; y < height; y += step) {
       for (let x = 0; x < width; x += step) {
         const index = y * width + x;
-        const elevation = elevationData[index];
+        let elevation = elevationData[index];
+        
+        // 無効な標高値をチェック・修正
+        if (elevation === null || elevation === undefined || isNaN(elevation) || !isFinite(elevation)) {
+          elevation = minElevation; // 無効な値は最小標高に設定
+        }
         
         // 3D座標を計算
         const worldX = minX + x * scaleX;
         const worldY = minY + y * scaleY;
         const worldZ = elevation;
         
+        // 座標値が有効かチェック
+        if (isNaN(worldX) || isNaN(worldY) || isNaN(worldZ)) {
+          console.warn(`無効な座標値: (${worldX}, ${worldY}, ${worldZ}) at index ${index}`);
+          continue; // 無効な座標はスキップ
+        }
+        
         vertices.push(worldX, worldY, worldZ);
         
         // 標高に基づく色を計算
-        const normalizedElevation = (elevation - minElevation) / elevationRange;
+        const normalizedElevation = elevationRange > 0 ? (elevation - minElevation) / elevationRange : 0;
         const color = getTerrainColor(normalizedElevation);
         colors.push(color.r, color.g, color.b);
       }
@@ -690,12 +731,31 @@ const PointCloudViewer = forwardRef(({
       }
     }
     
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-    geometry.setIndex(indices);
+    // 頂点データの検証
+    if (vertices.length === 0) {
+      throw new Error('有効な頂点データが生成されませんでした。');
+    }
     
-    // 法線を計算
-    geometry.computeVertexNormals();
+    // NaN値を含む頂点をチェック
+    let hasNaN = false;
+    for (let i = 0; i < vertices.length; i++) {
+      if (isNaN(vertices[i])) {
+        hasNaN = true;
+        console.warn(`NaN値が検出されました: インデックス ${i}, 値: ${vertices[i]}`);
+        break;
+      }
+    }
+    
+    if (hasNaN) {
+      console.warn('NaN値が含まれているため、境界計算をスキップします。');
+    } else {
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+      geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+      geometry.setIndex(indices);
+      
+      // 法線を計算
+      geometry.computeVertexNormals();
+    }
     
     return geometry;
   };
