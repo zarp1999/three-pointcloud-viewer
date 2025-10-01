@@ -578,13 +578,33 @@ const PointCloudViewer = forwardRef(({
       console.log('GeoTIFF境界:', bbox);
       console.log(`ピクセルサイズ: ${pixelWidth} x ${pixelHeight}`);
       
-      // 標高データの統計を計算
-      const minElevation = Math.min(...elevationArray);
-      const maxElevation = Math.max(...elevationArray);
+      // 標高データの統計を計算（大きな配列の場合は安全に処理）
+      let minElevation = elevationArray[0];
+      let maxElevation = elevationArray[0];
+      
+      for (let i = 1; i < elevationArray.length; i++) {
+        const elevation = elevationArray[i];
+        if (elevation < minElevation) minElevation = elevation;
+        if (elevation > maxElevation) maxElevation = elevation;
+      }
+      
       console.log(`標高範囲: ${minElevation.toFixed(2)}m - ${maxElevation.toFixed(2)}m`);
       
+      // 大きなファイルの場合は解像度を下げる
+      let targetWidth = width;
+      let targetHeight = height;
+      let step = 1;
+      
+      // ピクセル数が100万を超える場合は解像度を下げる
+      if (width * height > 1000000) {
+        step = Math.ceil(Math.sqrt((width * height) / 1000000));
+        targetWidth = Math.floor(width / step);
+        targetHeight = Math.floor(height / step);
+        console.log(`大きなファイルのため解像度を下げます: ${width}x${height} -> ${targetWidth}x${targetHeight} (step: ${step})`);
+      }
+      
       // 3D地形メッシュを生成
-      const geometry = createTerrainMesh(elevationArray, width, height, bbox);
+      const geometry = createTerrainMesh(elevationArray, width, height, bbox, step);
       
       // 地形を表示
       createTerrainSurface(geometry, minElevation, maxElevation);
@@ -601,9 +621,10 @@ const PointCloudViewer = forwardRef(({
    * @param {number} width - 画像幅
    * @param {number} height - 画像高さ
    * @param {Array} bbox - 地理的境界 [minX, minY, maxX, maxY]
+   * @param {number} step - サンプリングステップ（デフォルト: 1）
    * @returns {THREE.BufferGeometry} 地形メッシュのジオメトリ
    */
-  const createTerrainMesh = (elevationData, width, height, bbox) => {
+  const createTerrainMesh = (elevationData, width, height, bbox, step = 1) => {
     const geometry = new THREE.BufferGeometry();
     
     // 頂点配列を作成
@@ -620,14 +641,21 @@ const PointCloudViewer = forwardRef(({
     const scaleX = (maxX - minX) / (width - 1);
     const scaleY = (maxY - minY) / (height - 1);
     
-    // 標高の正規化用
-    const minElevation = Math.min(...elevationData);
-    const maxElevation = Math.max(...elevationData);
+    // 標高の正規化用（大きな配列の場合は安全に処理）
+    let minElevation = elevationData[0];
+    let maxElevation = elevationData[0];
+    
+    for (let i = 1; i < elevationData.length; i++) {
+      const elevation = elevationData[i];
+      if (elevation < minElevation) minElevation = elevation;
+      if (elevation > maxElevation) maxElevation = elevation;
+    }
+    
     const elevationRange = maxElevation - minElevation;
     
-    // 頂点と色を生成
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
+    // 頂点と色を生成（サンプリングステップを適用）
+    for (let y = 0; y < height; y += step) {
+      for (let x = 0; x < width; x += step) {
         const index = y * width + x;
         const elevation = elevationData[index];
         
@@ -645,12 +673,15 @@ const PointCloudViewer = forwardRef(({
       }
     }
     
-    // インデックスを生成（三角形メッシュ）
-    for (let y = 0; y < height - 1; y++) {
-      for (let x = 0; x < width - 1; x++) {
-        const topLeft = y * width + x;
+    // インデックスを生成（三角形メッシュ、サンプリングステップを適用）
+    const actualHeight = Math.floor(height / step);
+    const actualWidth = Math.floor(width / step);
+    
+    for (let y = 0; y < actualHeight - 1; y++) {
+      for (let x = 0; x < actualWidth - 1; x++) {
+        const topLeft = y * actualWidth + x;
         const topRight = topLeft + 1;
-        const bottomLeft = (y + 1) * width + x;
+        const bottomLeft = (y + 1) * actualWidth + x;
         const bottomRight = bottomLeft + 1;
         
         // 2つの三角形を作成
