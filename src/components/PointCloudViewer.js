@@ -17,6 +17,7 @@ import React, { forwardRef, useImperativeHandle, useRef, useEffect, useState } f
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import Stats from 'three/examples/jsm/libs/stats.module.js';
+import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { fromArrayBuffer } from 'geotiff';
 
 /**
@@ -137,6 +138,53 @@ const PointCloudViewer = forwardRef(({
   }, [showColors]);
 
   /**
+   * Skyオブジェクトを作成してシーンに追加
+   */
+  const createSky = (scene) => {
+    // Skyオブジェクトを作成
+    const sky = new Sky();
+    
+    // Skyのスケールを設定
+    sky.scale.setScalar(450000);
+    
+    // Skyオブジェクトをシーンに追加
+    scene.add(sky);
+    
+    // Skyオブジェクトのマテリアルのuniformsを取得
+    const uniforms = sky.material.uniforms;
+    
+    // 大気の透明度
+    uniforms['turbidity'].value = 10;
+    
+    // 空の青さの度合い
+    uniforms['rayleigh'].value = 3;
+    
+    // 太陽光の散乱度
+    uniforms['mieCoefficient'].value = 0.005;
+    uniforms['mieDirectionalG'].value = 0.7;
+    
+    // 太陽の位置や角度を制御するためのパラメータ
+    const parameters = {
+      inclination: 0.49, // 太陽の傾斜角
+      azimuth: -32.4, // 太陽の方位角
+      elevation: 2, // 太陽の高度（地平線からの角度）
+    };
+    
+    // 太陽の位置を表すベクトルの初期化
+    const sun = new THREE.Vector3();
+    
+    // 球座標系を使用して太陽の位置を決定
+    const phi = THREE.MathUtils.degToRad(90 - parameters.elevation);
+    const theta = THREE.MathUtils.degToRad(parameters.azimuth);
+    sun.setFromSphericalCoords(1, phi, theta);
+    
+    // 計算された太陽の位置をuniformに設定
+    uniforms['sunPosition'].value.copy(sun);
+    
+    return { sky, sun, uniforms };
+  };
+
+  /**
    * Three.jsの初期化
    */
   const initThreeJS = () => {
@@ -178,16 +226,25 @@ const PointCloudViewer = forwardRef(({
     raycasterRef.current = raycaster;
     mouseRef.current = mouse;
 
-    // ライティングを設定（色を鮮やかに見せるため明るく調整）
-    const ambientLight = new THREE.AmbientLight(0x606060, 0.8);
+    // Skyオブジェクトを作成
+    const { sky, sun, uniforms } = createSky(scene);
+    
+    // 背景をSkyに変更
+    scene.background = null;
+    
+    // ライティングを設定（太陽の位置に合わせて調整）
+    const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
     scene.add(ambientLight);
 
     const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
-    directionalLight.position.set(1, 1, 1);
+    directionalLight.position.copy(sun);
     scene.add(directionalLight);
     
+    // 太陽光の色を調整（暖かい色合い）
+    directionalLight.color.setHex(0xfff4e6);
+    
     // 追加のライトで色をより明るく
-    const additionalLight = new THREE.DirectionalLight(0xffffff, 0.3);
+    const additionalLight = new THREE.DirectionalLight(0xffffff, 0.2);
     additionalLight.position.set(-1, -1, 1);
     scene.add(additionalLight);
 
