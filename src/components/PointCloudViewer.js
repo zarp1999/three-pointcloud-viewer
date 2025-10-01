@@ -178,13 +178,18 @@ const PointCloudViewer = forwardRef(({
     raycasterRef.current = raycaster;
     mouseRef.current = mouse;
 
-    // ライティングを設定
-    const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+    // ライティングを設定（色を鮮やかに見せるため明るく調整）
+    const ambientLight = new THREE.AmbientLight(0x606060, 0.8);
     scene.add(ambientLight);
 
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
     directionalLight.position.set(1, 1, 1);
     scene.add(directionalLight);
+    
+    // 追加のライトで色をより明るく
+    const additionalLight = new THREE.DirectionalLight(0xffffff, 0.3);
+    additionalLight.position.set(-1, -1, 1);
+    scene.add(additionalLight);
 
     // Stats Panelを初期化
     const stats = new Stats();
@@ -640,8 +645,8 @@ const PointCloudViewer = forwardRef(({
    * @returns {THREE.BufferGeometry} 地形メッシュのジオメトリ
    */
   const createTerrainMesh = (elevationData, width, height, bbox, step = 1) => {
-    const geometry = new THREE.BufferGeometry();
-    
+          const geometry = new THREE.BufferGeometry();
+
     // 頂点配列を作成
     const vertices = [];
     const colors = [];
@@ -667,7 +672,7 @@ const PointCloudViewer = forwardRef(({
         if (minElevation === null) {
           minElevation = elevation;
           maxElevation = elevation;
-        } else {
+            } else {
           if (elevation < minElevation) minElevation = elevation;
           if (elevation > maxElevation) maxElevation = elevation;
         }
@@ -694,10 +699,22 @@ const PointCloudViewer = forwardRef(({
           elevation = minElevation; // 無効な値は最小標高に設定
         }
         
-        // 3D座標を計算（Z軸のスケーリングを適用）
-        const worldX = minX + x * scaleX;
-        const worldY = minY + y * scaleY;
-        const worldZ = elevation * getVerticalExaggeration(elevationRange);
+        // 3D座標を計算（ピクセル座標モードまたは地理座標モード）
+        let worldX, worldY, worldZ;
+        
+        // 標高差が小さい場合はピクセル座標を使用（Pythonと同じ表示）
+        if (elevationRange < 1000) {
+          worldX = x;
+          worldY = y;
+          worldZ = elevation;
+          console.log('ピクセル座標モードを使用');
+        } else {
+          // 地理座標モード
+          worldX = minX + x * scaleX;
+          worldY = minY + y * scaleY;
+          worldZ = elevation * getVerticalExaggeration(elevationRange);
+          console.log('地理座標モードを使用');
+        }
         
         // 座標値が有効かチェック
         if (isNaN(worldX) || isNaN(worldY) || isNaN(worldZ)) {
@@ -784,22 +801,22 @@ const PointCloudViewer = forwardRef(({
    * @returns {Object} RGB色オブジェクト
    */
   const getTerrainColor = (normalizedElevation) => {
-    // 地形の色分け（低地から高地へ）
+    // 地形の色分け（低地から高地へ）- より鮮やかで明るい色に調整
     if (normalizedElevation < 0.1) {
-      // 海・湖（青）
-      return { r: 0.2, g: 0.4, b: 0.8 };
+      // 海・湖（鮮やかな青）
+      return { r: 0.1, g: 0.3, b: 1.0 };
     } else if (normalizedElevation < 0.3) {
-      // 平地・草原（緑）
-      return { r: 0.3, g: 0.7, b: 0.3 };
+      // 平地・草原（鮮やかな緑）
+      return { r: 0.2, g: 0.8, b: 0.2 };
     } else if (normalizedElevation < 0.6) {
-      // 丘陵（黄緑）
-      return { r: 0.6, g: 0.8, b: 0.4 };
+      // 丘陵（鮮やかな黄緑）
+      return { r: 0.7, g: 1.0, b: 0.3 };
     } else if (normalizedElevation < 0.8) {
-      // 山地（茶色）
-      return { r: 0.6, g: 0.4, b: 0.2 };
+      // 山地（鮮やかな茶色）
+      return { r: 0.8, g: 0.5, b: 0.2 };
     } else {
-      // 高山（白）
-      return { r: 0.9, g: 0.9, b: 0.9 };
+      // 高山（明るい白）
+      return { r: 1.0, g: 1.0, b: 1.0 };
     }
   };
 
@@ -819,12 +836,15 @@ const PointCloudViewer = forwardRef(({
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
 
-    // マテリアルを作成（地形の起伏を強調）
+    // マテリアルを作成（地形の起伏を強調、色を鮮やかに）
     const material = new THREE.MeshPhongMaterial({
       vertexColors: true,
       side: THREE.DoubleSide,
-      shininess: 30,
-      specular: 0x111111
+      shininess: 10,
+      specular: 0x000000,
+      emissive: 0x000000,
+      transparent: false,
+      opacity: 1.0
     });
 
     // 地形メッシュを作成
@@ -1302,10 +1322,10 @@ const PointCloudViewer = forwardRef(({
         const fileExtension = file.name.split('.').pop().toLowerCase();
 
         if (fileExtension === 'las') {
-          await loadLASFile(file);
+            await loadLASFile(file);
         } else if (fileExtension === 'tif' || fileExtension === 'tiff') {
           await loadGeoTIFFFile(file);
-        } else {
+          } else {
           throw new Error('サポートされていないファイル形式です。LASファイルまたはGeoTIFFファイルを選択してください。');
         }
       } catch (error) {
