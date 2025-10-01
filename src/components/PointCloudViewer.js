@@ -694,10 +694,10 @@ const PointCloudViewer = forwardRef(({
           elevation = minElevation; // 無効な値は最小標高に設定
         }
         
-        // 3D座標を計算
+        // 3D座標を計算（Z軸のスケーリングを適用）
         const worldX = minX + x * scaleX;
         const worldY = minY + y * scaleY;
-        const worldZ = elevation;
+        const worldZ = elevation * getVerticalExaggeration(elevationRange);
         
         // 座標値が有効かチェック
         if (isNaN(worldX) || isNaN(worldY) || isNaN(worldZ)) {
@@ -761,6 +761,24 @@ const PointCloudViewer = forwardRef(({
   };
 
   /**
+   * 垂直強調係数を取得
+   * @param {number} elevationRange - 標高範囲
+   * @returns {number} 垂直強調係数
+   */
+  const getVerticalExaggeration = (elevationRange) => {
+    // 標高範囲に基づいて適切な垂直強調係数を計算
+    if (elevationRange < 10) {
+      return 10; // 平坦な地形は10倍強調
+    } else if (elevationRange < 100) {
+      return 5;  // 丘陵地は5倍強調
+    } else if (elevationRange < 500) {
+      return 2;  // 山地は2倍強調
+    } else {
+      return 1;  // 高山地は強調なし
+    }
+  };
+
+  /**
    * 標高に基づく地形色を取得
    * @param {number} normalizedElevation - 正規化された標高 (0-1)
    * @returns {Object} RGB色オブジェクト
@@ -801,10 +819,12 @@ const PointCloudViewer = forwardRef(({
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
 
-    // マテリアルを作成
-    const material = new THREE.MeshLambertMaterial({
+    // マテリアルを作成（地形の起伏を強調）
+    const material = new THREE.MeshPhongMaterial({
       vertexColors: true,
-      side: THREE.DoubleSide
+      side: THREE.DoubleSide,
+      shininess: 30,
+      specular: 0x111111
     });
 
     // 地形メッシュを作成
@@ -819,15 +839,24 @@ const PointCloudViewer = forwardRef(({
     console.log(`地形の中心: (${center.x.toFixed(3)}, ${center.y.toFixed(3)}, ${center.z.toFixed(3)})`);
     console.log(`地形の半径: ${radius.toFixed(3)}`);
 
-    // カメラを地形の外側に配置
-    const distance = Math.max(radius * 2, 100);
+    // カメラを地形の外側に配置（地形の起伏を考慮）
+    const elevationRange = maxElevation - minElevation;
+    const verticalExaggeration = getVerticalExaggeration(elevationRange);
+    const adjustedRadius = Math.max(radius, elevationRange * verticalExaggeration * 0.1);
+    const distance = Math.max(adjustedRadius * 1.5, 100);
+    
+    // カメラを斜め上から見下ろす角度に配置
     cameraRef.current.position.set(
-      center.x + distance,
-      center.y + distance,
+      center.x + distance * 0.7,
+      center.y + distance * 0.7,
       center.z + distance * 0.5
     );
     controlsRef.current.target.copy(center);
     controlsRef.current.update();
+    
+    console.log(`垂直強調係数: ${verticalExaggeration}x`);
+    console.log(`調整された半径: ${adjustedRadius.toFixed(2)}`);
+    console.log(`カメラ距離: ${distance.toFixed(2)}`);
 
     // 地形情報を保存
     const info = {
