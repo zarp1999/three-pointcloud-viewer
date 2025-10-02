@@ -637,8 +637,15 @@ const PointCloudViewer = forwardRef(({
       const pixelWidth = image.getWidth();
       const pixelHeight = image.getHeight();
       
+      // ピクセル解像度を取得
+      const fileDirectory = image.getFileDirectory();
+      const modelPixelScale = fileDirectory.ModelPixelScale;
+      const dx = modelPixelScale ? modelPixelScale[0] : 1;
+      const dy = modelPixelScale ? modelPixelScale[1] : 1;
+      
       console.log('GeoTIFF境界:', bbox);
       console.log(`ピクセルサイズ: ${pixelWidth} x ${pixelHeight}`);
+      console.log(`ピクセル解像度: ${dx} x ${dy}`);
       
       // 標高データの統計を計算（無効な値を除外して安全に処理）
       let minElevation = null;
@@ -702,13 +709,6 @@ const PointCloudViewer = forwardRef(({
    * @returns {THREE.BufferGeometry} 地形メッシュのジオメトリ
    */
   const createTerrainMesh = (elevationData, width, height, bbox, step = 1) => {
-          const geometry = new THREE.BufferGeometry();
-
-    // 頂点配列を作成
-    const vertices = [];
-    const colors = [];
-    const indices = [];
-    
     // 地理座標から3D座標への変換
     const minX = bbox[0];
     const minY = bbox[1];
@@ -729,7 +729,7 @@ const PointCloudViewer = forwardRef(({
         if (minElevation === null) {
           minElevation = elevation;
           maxElevation = elevation;
-            } else {
+        } else {
           if (elevation < minElevation) minElevation = elevation;
           if (elevation > maxElevation) maxElevation = elevation;
         }
@@ -745,91 +745,77 @@ const PointCloudViewer = forwardRef(({
     
     const elevationRange = maxElevation - minElevation;
     
-    // 頂点と色を生成（サンプリングステップを適用）
-    for (let y = 0; y < height; y += step) {
-      for (let x = 0; x < width; x += step) {
-        const index = y * width + x;
-        let elevation = elevationData[index];
+    // サンプリング後のサイズを計算
+    const newWidth = Math.ceil(width / step);
+    const newHeight = Math.ceil(height / step);
+    
+    // 地理座標でのサイズを計算
+    const geoWidth = (maxX - minX);
+    const geoHeight = (maxY - minY);
+    
+    // PlaneGeometryを作成（ラスターのピクセル数分の頂点を持つ）
+    const geometry = new THREE.PlaneGeometry(
+      geoWidth, 
+      geoHeight, 
+      newWidth - 1, 
+      newHeight - 1
+    );
+    
+    // デフォルトは縦向きなのでX軸を中心に90度回転
+    geometry.rotateX(-Math.PI / 2);
+    
+    // PlaneGeometryの頂点座標をDEMの値に置き換える
+    const vertices = geometry.attributes.position.array;
+    
+    // 頂点カラー配列を作成
+    const colors = [];
+    
+    // DEMの値を元に、vertices配列のy座標を更新して頂点を立ち上げる
+    let vertexIndex = 0;
+    for (let y = 0; y < newHeight; y++) {
+      for (let x = 0; x < newWidth; x++) {
+        const dataIndex = Math.floor(y * step) * width + Math.floor(x * step);
+        const elevation = elevationData[dataIndex];
         
-        // 無効な標高値をチェック・修正
-        if (elevation === null || elevation === undefined || isNaN(elevation) || !isFinite(elevation)) {
-          elevation = minElevation; // 無効な値は最小標高に設定
-        }
+        // 無効な標高値の場合は最小値を使用
+        const validElevation = (elevation !== null && elevation !== undefined && !isNaN(elevation) && isFinite(elevation)) 
+          ? elevation 
+          : minElevation;
         
         // 3D座標を計算（ピクセル座標モードまたは地理座標モード）
-        let worldX, worldY, worldZ;
+        let worldZ;
         
         // 標高差が小さい場合はピクセル座標を使用（Pythonと同じ表示）
         if (elevationRange < 1000) {
-          worldX = x;
-          worldY = y;
-          worldZ = elevation;
+          worldZ = validElevation;
           console.log('ピクセル座標モードを使用');
         } else {
           // 地理座標モード
-          worldX = minX + x * scaleX;
-          worldY = minY + y * scaleY;
-          worldZ = elevation * getVerticalExaggeration(elevationRange);
+          worldZ = validElevation * getVerticalExaggeration(elevationRange);
           console.log('地理座標モードを使用');
         }
         
-        // 座標値が有効かチェック
-        if (isNaN(worldX) || isNaN(worldY) || isNaN(worldZ)) {
-          console.warn(`無効な座標値: (${worldX}, ${worldY}, ${worldZ}) at index ${index}`);
-          continue; // 無効な座標はスキップ
-        }
-        
-        vertices.push(worldX, worldY, worldZ);
+        // 頂点のZ座標（高さ）を更新
+        vertices[vertexIndex + 2] = worldZ;
         
         // 標高に基づく色を計算
-        const normalizedElevation = elevationRange > 0 ? (elevation - minElevation) / elevationRange : 0;
+        const normalizedElevation = elevationRange > 0 ? (validElevation - minElevation) / elevationRange : 0;
         const color = getTerrainColor(normalizedElevation);
         colors.push(color.r, color.g, color.b);
-      }
-    }
-    
-    // インデックスを生成（三角形メッシュ、サンプリングステップを適用）
-    const actualHeight = Math.floor(height / step);
-    const actualWidth = Math.floor(width / step);
-    
-    for (let y = 0; y < actualHeight - 1; y++) {
-      for (let x = 0; x < actualWidth - 1; x++) {
-        const topLeft = y * actualWidth + x;
-        const topRight = topLeft + 1;
-        const bottomLeft = (y + 1) * actualWidth + x;
-        const bottomRight = bottomLeft + 1;
         
-        // 2つの三角形を作成
-        indices.push(topLeft, bottomLeft, topRight);
-        indices.push(topRight, bottomLeft, bottomRight);
+        vertexIndex += 3;
       }
     }
     
-    // 頂点データの検証
-    if (vertices.length === 0) {
-      throw new Error('有効な頂点データが生成されませんでした。');
-    }
+    // 頂点カラーを設定
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     
-    // NaN値を含む頂点をチェック
-    let hasNaN = false;
-    for (let i = 0; i < vertices.length; i++) {
-      if (isNaN(vertices[i])) {
-        hasNaN = true;
-        console.warn(`NaN値が検出されました: インデックス ${i}, 値: ${vertices[i]}`);
-        break;
-      }
-    }
+    // 立ち上げたPlaneGeometryの底面が原点0になるようにジオメトリを下げる
+    const minValue = minElevation;
+    geometry.translate(0, -minValue, 0);
     
-    if (hasNaN) {
-      console.warn('NaN値が含まれているため、境界計算をスキップします。');
-    } else {
-      geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-      geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-      geometry.setIndex(indices);
-      
-      // 法線を計算
-      geometry.computeVertexNormals();
-    }
+    // 法線を再計算
+    geometry.computeVertexNormals();
     
     return geometry;
   };
@@ -893,10 +879,10 @@ const PointCloudViewer = forwardRef(({
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
 
-    // マテリアルを作成（地形の起伏を強調、色を鮮やかに）
+    // マテリアルを作成（PlaneGeometry用、頂点カラー対応）
     const material = new THREE.MeshPhongMaterial({
-      vertexColors: true,
-      side: THREE.DoubleSide,
+      vertexColors: true, // 頂点カラーを使用
+      side: THREE.DoubleSide, // 裏面も表示
       shininess: 10,
       specular: 0x000000,
       emissive: 0x000000,
@@ -1379,7 +1365,7 @@ const PointCloudViewer = forwardRef(({
         const fileExtension = file.name.split('.').pop().toLowerCase();
 
         if (fileExtension === 'las') {
-            await loadLASFile(file);
+            await loadLASFile(file);4
         } else if (fileExtension === 'tif' || fileExtension === 'tiff') {
           await loadGeoTIFFFile(file);
           } else {
