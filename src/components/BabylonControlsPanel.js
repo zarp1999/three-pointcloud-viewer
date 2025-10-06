@@ -75,7 +75,7 @@ const BabylonControlsPanel = ({
       {/* 高さスケール調整 */}
       <div className="control-group">
         <label htmlFor="heightScale">
-          高さスケール: {heightScale.toFixed(2)}
+          高さスケール: {heightScale ? heightScale.toFixed(2) : '1.00'}
         </label>
         <input
           id="heightScale"
@@ -83,7 +83,7 @@ const BabylonControlsPanel = ({
           min="0.1"
           max="5.0"
           step="0.1"
-          value={heightScale}
+          value={heightScale || 1.0}
           onChange={(e) => handleHeightScaleChange(parseFloat(e.target.value))}
           className="slider"
         />

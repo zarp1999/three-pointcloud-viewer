@@ -189,9 +189,11 @@ const BabylonDynamicTerrainViewer = forwardRef(({
       // 既存の地形を削除
       if (terrainRef.current) {
         terrainRef.current.dispose();
+        terrainRef.current = null;
       }
       if (groundRef.current) {
         groundRef.current.dispose();
+        groundRef.current = null;
       }
 
       // 高さマップテクスチャを作成
@@ -217,7 +219,7 @@ const BabylonDynamicTerrainViewer = forwardRef(({
         height: terrainSize,
         subdivisions: 64,
         minHeight: 0,
-        maxHeight: heightScale * 10
+        maxHeight: (heightScale || 1.0) * 10
       }, sceneRef.current);
       groundRef.current = ground;
 
@@ -225,7 +227,7 @@ const BabylonDynamicTerrainViewer = forwardRef(({
       const material = new StandardMaterial("terrainMaterial", sceneRef.current);
       material.diffuseColor = new Color3(0.4, 0.6, 0.3);
       material.specularColor = new Color3(0.2, 0.2, 0.2);
-      material.wireframe = showWireframe;
+      material.wireframe = showWireframe || false;
       
       // 高さに基づく色分けテクスチャ
       const colorTexture = new DynamicTexture("terrainColorTexture", 512, sceneRef.current);
@@ -286,62 +288,68 @@ const BabylonDynamicTerrainViewer = forwardRef(({
    * @param {number} scale - 新しい高さスケール
    */
   const updateHeightScale = (scale) => {
-    if (terrainRef.current && heightDataRef.current) {
-      // 高さマップテクスチャを再作成
-      const heightMapTexture = new DynamicTexture("heightMap", heightDataRef.current.width, sceneRef.current);
-      const context = heightMapTexture.getContext();
-      
-      // 高さデータをテクスチャに描画（新しいスケールで）
-      const imageData = context.createImageData(heightDataRef.current.width, heightDataRef.current.height);
-      for (let i = 0; i < heightDataRef.current.data.length; i++) {
-        const height = heightDataRef.current.data[i];
-        const pixelIndex = i * 4;
-        imageData.data[pixelIndex] = height * 255;     // R
-        imageData.data[pixelIndex + 1] = height * 255; // G
-        imageData.data[pixelIndex + 2] = height * 255; // B
-        imageData.data[pixelIndex + 3] = 255;          // A
-      }
-      context.putImageData(imageData, 0, 0);
-      heightMapTexture.update();
-
-      // 既存の地形を削除
-      terrainRef.current.dispose();
-      
-      // 新しい高さスケールで地形を再作成
-      const ground = MeshBuilder.CreateGroundFromHeightMap("terrain", heightMapTexture, {
-        width: terrainSize,
-        height: terrainSize,
-        subdivisions: 64,
-        minHeight: 0,
-        maxHeight: scale * 10
-      }, sceneRef.current);
-      
-      // マテリアルを適用
-      const material = new StandardMaterial("terrainMaterial", sceneRef.current);
-      material.diffuseColor = new Color3(0.4, 0.6, 0.3);
-      material.specularColor = new Color3(0.2, 0.2, 0.2);
-      material.wireframe = showWireframe;
-      
-      // 色分けテクスチャを適用
-      const colorTexture = new DynamicTexture("terrainColorTexture", 512, sceneRef.current);
-      const colorContext = colorTexture.getContext();
-      
-      for (let i = 0; i < 512; i++) {
-        const gradient = colorContext.createLinearGradient(0, 0, 0, 512);
-        gradient.addColorStop(0, '#87CEEB');
-        gradient.addColorStop(0.3, '#8FBC8F');
-        gradient.addColorStop(0.7, '#D2B48C');
-        gradient.addColorStop(1, '#F4A460');
+    if (terrainRef.current && heightDataRef.current && sceneRef.current) {
+      try {
+        // 既存の地形を削除
+        if (terrainRef.current) {
+          terrainRef.current.dispose();
+        }
         
-        colorContext.fillStyle = gradient;
-        colorContext.fillRect(i, 0, 1, 512);
+        // 高さマップテクスチャを再作成
+        const heightMapTexture = new DynamicTexture("heightMap", heightDataRef.current.width, sceneRef.current);
+        const context = heightMapTexture.getContext();
+        
+        // 高さデータをテクスチャに描画（新しいスケールで）
+        const imageData = context.createImageData(heightDataRef.current.width, heightDataRef.current.height);
+        for (let i = 0; i < heightDataRef.current.data.length; i++) {
+          const height = heightDataRef.current.data[i];
+          const pixelIndex = i * 4;
+          imageData.data[pixelIndex] = height * 255;     // R
+          imageData.data[pixelIndex + 1] = height * 255; // G
+          imageData.data[pixelIndex + 2] = height * 255; // B
+          imageData.data[pixelIndex + 3] = 255;          // A
+        }
+        context.putImageData(imageData, 0, 0);
+        heightMapTexture.update();
+
+        // 新しい高さスケールで地形を再作成
+        const ground = MeshBuilder.CreateGroundFromHeightMap("terrain", heightMapTexture, {
+          width: terrainSize,
+          height: terrainSize,
+          subdivisions: 64,
+          minHeight: 0,
+          maxHeight: scale * 10
+        }, sceneRef.current);
+        
+        // マテリアルを適用
+        const material = new StandardMaterial("terrainMaterial", sceneRef.current);
+        material.diffuseColor = new Color3(0.4, 0.6, 0.3);
+        material.specularColor = new Color3(0.2, 0.2, 0.2);
+        material.wireframe = showWireframe;
+        
+        // 色分けテクスチャを適用
+        const colorTexture = new DynamicTexture("terrainColorTexture", 512, sceneRef.current);
+        const colorContext = colorTexture.getContext();
+        
+        for (let i = 0; i < 512; i++) {
+          const gradient = colorContext.createLinearGradient(0, 0, 0, 512);
+          gradient.addColorStop(0, '#87CEEB');
+          gradient.addColorStop(0.3, '#8FBC8F');
+          gradient.addColorStop(0.7, '#D2B48C');
+          gradient.addColorStop(1, '#F4A460');
+          
+          colorContext.fillStyle = gradient;
+          colorContext.fillRect(i, 0, 1, 512);
+        }
+        colorTexture.update();
+        
+        material.diffuseTexture = colorTexture;
+        ground.material = material;
+        
+        terrainRef.current = ground;
+      } catch (error) {
+        console.error('高さスケールの更新に失敗しました:', error);
       }
-      colorTexture.update();
-      
-      material.diffuseTexture = colorTexture;
-      ground.material = material;
-      
-      terrainRef.current = ground;
     }
   };
 

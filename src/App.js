@@ -166,7 +166,9 @@ function App() {
    * @param {number} scale - 新しい高さスケール
    */
   const handleBabylonHeightScaleChange = (scale) => {
-    setBabylonHeightScale(scale);
+    if (typeof scale === 'number' && !isNaN(scale)) {
+      setBabylonHeightScale(scale);
+    }
   };
 
   /**
