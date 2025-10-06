@@ -2,9 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import PointCloudViewer from './components/PointCloudViewer';
 import Sidebar from './components/Sidebar';
 import FileUpload from './components/FileUpload';
-import BabylonDynamicTerrainViewer from './components/BabylonDynamicTerrainViewer';
-import BabylonFileUpload from './components/BabylonFileUpload';
-import BabylonControlsPanel from './components/BabylonControlsPanel';
 
 /**
  * メインアプリケーションコンポーネント
@@ -29,17 +26,8 @@ function App() {
   // サイドバーの表示状態
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
   
-  // ビューアモードの状態管理
-  const [viewerMode, setViewerMode] = useState('threejs'); // 'threejs' または 'babylon'
-  
   // Three.js関連の参照
   const viewerRef = useRef(null);
-  
-  // Babylon.js関連の参照
-  const babylonViewerRef = useRef(null);
-  const [babylonTerrainInfo, setBabylonTerrainInfo] = useState(null);
-  const [babylonHeightScale, setBabylonHeightScale] = useState(1.0);
-  const [babylonShowWireframe, setBabylonShowWireframe] = useState(false);
 
   /**
    * 計測距離を定期的に更新
@@ -145,64 +133,12 @@ function App() {
     setIsSidebarVisible(!isSidebarVisible);
   };
 
-  /**
-   * ビューアモードを切り替える
-   * @param {string} mode - ビューアモード ('threejs' または 'babylon')
-   */
-  const handleViewerModeChange = (mode) => {
-    setViewerMode(mode);
-  };
-
-  /**
-   * Babylon.js地形情報を更新する
-   * @param {Object} info - 地形の情報
-   */
-  const handleBabylonTerrainLoaded = (info) => {
-    setBabylonTerrainInfo(info);
-  };
-
-  /**
-   * Babylon.js高さスケールを更新する
-   * @param {number} scale - 新しい高さスケール
-   */
-  const handleBabylonHeightScaleChange = (scale) => {
-    if (typeof scale === 'number' && !isNaN(scale)) {
-      setBabylonHeightScale(scale);
-    }
-  };
-
-  /**
-   * Babylon.jsワイヤーフレーム表示を切り替える
-   * @param {boolean} wireframe - ワイヤーフレーム表示の有無
-   */
-  const handleBabylonWireframeToggle = (wireframe) => {
-    setBabylonShowWireframe(wireframe);
-  };
-
   return (
     <div className="app-container">
       <header>
         <div className="header-content">
           <h1>点群データビューア</h1>
           <div className="header-controls">
-            {/* ビューアモード切り替え */}
-            <div className="viewer-mode-selector">
-              <button 
-                className={`mode-btn ${viewerMode === 'threejs' ? 'active' : ''}`}
-                onClick={() => handleViewerModeChange('threejs')}
-                title="Three.js ビューア"
-              >
-                Three.js
-              </button>
-              <button 
-                className={`mode-btn ${viewerMode === 'babylon' ? 'active' : ''}`}
-                onClick={() => handleViewerModeChange('babylon')}
-                title="Babylon.js 高さマップ地形ビューア"
-              >
-                Babylon.js
-              </button>
-            </div>
-            
             <button 
               className="sidebar-toggle-btn"
               onClick={handleToggleSidebar}
@@ -214,76 +150,46 @@ function App() {
                 <span></span>
               </div>
             </button>
-            
-            {/* ファイルアップロード */}
-            {viewerMode === 'threejs' ? (
-              <FileUpload 
-                onFileLoad={handlePointCloudLoaded}
-                onLoadingChange={handleLoadingChange}
-                viewerRef={viewerRef}
-              />
-            ) : (
-              <BabylonFileUpload 
-                onFileLoad={handleBabylonTerrainLoaded}
-                onLoadingChange={handleLoadingChange}
-                viewerRef={babylonViewerRef}
-              />
-            )}
+            <FileUpload 
+              onFileLoad={handlePointCloudLoaded}
+              onLoadingChange={handleLoadingChange}
+              viewerRef={viewerRef}
+            />
           </div>
         </div>
       </header>
       
       <div className={`main-content ${!isSidebarVisible ? 'full-width' : ''}`}>
         <div className="viewer-container">
-          {viewerMode === 'threejs' ? (
-            <PointCloudViewer 
-              ref={viewerRef}
-              pointSize={pointSize}
-              opacity={opacity}
-              showColors={showColors}
-              onPointCloudLoaded={handlePointCloudLoaded}
-              onLoadingChange={handleLoadingChange}
-            />
-          ) : (
-            <BabylonDynamicTerrainViewer 
-              ref={babylonViewerRef}
-              terrainSize={200}
-              heightScale={babylonHeightScale}
-              showWireframe={babylonShowWireframe}
-              onTerrainLoaded={handleBabylonTerrainLoaded}
-              onLoadingChange={handleLoadingChange}
-            />
-          )}
+          <PointCloudViewer 
+            ref={viewerRef}
+            pointSize={pointSize}
+            opacity={opacity}
+            showColors={showColors}
+            onPointCloudLoaded={handlePointCloudLoaded}
+            onLoadingChange={handleLoadingChange}
+          />
           {isLoading && (
             <div className="loading show">読み込み中...</div>
           )}
         </div>
         
         {isSidebarVisible && (
-          viewerMode === 'threejs' ? (
-            <Sidebar
-              pointSize={pointSize}
-              opacity={opacity}
-              showColors={showColors}
-              onPointSizeChange={handlePointSizeChange}
-              onOpacityChange={handleOpacityChange}
-              onToggleColors={handleToggleColors}
-              onReset={handleReset}
-              onToggleStats={handleToggleStats}
-              onToggleMeasurement={handleToggleMeasurement}
-              onClearMeasurement={handleClearMeasurement}
-              isMeasurementMode={isMeasurementMode}
-              measurementDistance={measurementDistance}
-              pointCloudInfo={pointCloudInfo}
-            />
-          ) : (
-            <BabylonControlsPanel
-              viewerRef={babylonViewerRef}
-              terrainInfo={babylonTerrainInfo}
-              onHeightScaleChange={handleBabylonHeightScaleChange}
-              onWireframeToggle={handleBabylonWireframeToggle}
-            />
-          )
+          <Sidebar
+            pointSize={pointSize}
+            opacity={opacity}
+            showColors={showColors}
+            onPointSizeChange={handlePointSizeChange}
+            onOpacityChange={handleOpacityChange}
+            onToggleColors={handleToggleColors}
+            onReset={handleReset}
+            onToggleStats={handleToggleStats}
+            onToggleMeasurement={handleToggleMeasurement}
+            onClearMeasurement={handleClearMeasurement}
+            isMeasurementMode={isMeasurementMode}
+            measurementDistance={measurementDistance}
+            pointCloudInfo={pointCloudInfo}
+          />
         )}
       </div>
     </div>

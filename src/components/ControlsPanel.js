@@ -69,9 +69,9 @@ const ControlsPanel = ({
       <div className="control-group">
         <button 
           onClick={onToggleColors}
-          style={{
-            background: showColors ? '#3498db' : '#e74c3c'
-          }}
+          // style={{
+          //   background: showColors ? '#3498db' : '#e74c3c'
+          // }}
         >
           {showColors ? '色情報を無効にする' : '色情報を有効にする'}
         </button>
@@ -91,9 +91,9 @@ const ControlsPanel = ({
       <div className="control-group">
         <button 
           onClick={onToggleMeasurement}
-          style={{
-            background: isMeasurementMode ? '#e74c3c' : '#27ae60'
-          }}
+          // style={{
+          //   background: isMeasurementMode ? '#e74c3c' : '#27ae60'
+          // }}
         >
           {isMeasurementMode ? '計測モードを無効にする' : '計測モードを有効にする'}
         </button>

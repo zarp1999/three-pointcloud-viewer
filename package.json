@@ -40,9 +40,6 @@
     "webpack-dev-server": "^4.15.0"
   },
   "dependencies": {
-    "@babylonjs/core": "^6.0.0",
-    "@babylonjs/loaders": "^6.0.0",
-    "@babylonjs/materials": "^6.0.0",
     "geotiff": "^2.0.7",
     "potree-core": "^2.0.11",
     "react": "^18.2.0",
