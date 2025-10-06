@@ -729,7 +729,7 @@ const PointCloudViewer = forwardRef(({
         if (minElevation === null) {
           minElevation = elevation;
           maxElevation = elevation;
-        } else {
+            } else {
           if (elevation < minElevation) minElevation = elevation;
           if (elevation > maxElevation) maxElevation = elevation;
         }
@@ -761,8 +761,8 @@ const PointCloudViewer = forwardRef(({
       newHeight - 1
     );
     
-    // デフォルトは縦向きなのでX軸を中心に90度回転
-    geometry.rotateX(-Math.PI / 2);
+    // PlaneGeometryはデフォルトでXZ平面に配置されるため、回転は不要
+    // geometry.rotateX(-Math.PI / 2); // この行をコメントアウト
     
     // PlaneGeometryの頂点座標をDEMの値に置き換える
     const vertices = geometry.attributes.position.array;
@@ -770,7 +770,7 @@ const PointCloudViewer = forwardRef(({
     // 頂点カラー配列を作成
     const colors = [];
     
-    // DEMの値を元に、vertices配列のy座標を更新して頂点を立ち上げる
+    // DEMの値を元に、vertices配列のY座標を更新して頂点を立ち上げる
     let vertexIndex = 0;
     for (let y = 0; y < newHeight; y++) {
       for (let x = 0; x < newWidth; x++) {
@@ -783,20 +783,20 @@ const PointCloudViewer = forwardRef(({
           : minElevation;
         
         // 3D座標を計算（ピクセル座標モードまたは地理座標モード）
-        let worldZ;
+        let worldY; // PlaneGeometryではY座標が高さ
         
         // 標高差が小さい場合はピクセル座標を使用（Pythonと同じ表示）
         if (elevationRange < 1000) {
-          worldZ = validElevation;
+          worldY = validElevation;
           console.log('ピクセル座標モードを使用');
         } else {
           // 地理座標モード
-          worldZ = validElevation * getVerticalExaggeration(elevationRange);
+          worldY = validElevation * getVerticalExaggeration(elevationRange);
           console.log('地理座標モードを使用');
         }
         
-        // 頂点のZ座標（高さ）を更新
-        vertices[vertexIndex + 2] = worldZ;
+        // 頂点のY座標（高さ）を更新（PlaneGeometryではY軸が高さ）
+        vertices[vertexIndex + 1] = worldY;
         
         // 標高に基づく色を計算
         const normalizedElevation = elevationRange > 0 ? (validElevation - minElevation) / elevationRange : 0;
@@ -809,6 +809,12 @@ const PointCloudViewer = forwardRef(({
     
     // 頂点カラーを設定
     geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    
+    // デバッグ情報を出力
+    console.log(`PlaneGeometry頂点数: ${vertices.length / 3}`);
+    console.log(`色数: ${colors.length / 3}`);
+    console.log(`標高範囲: ${minElevation} - ${maxElevation}`);
+    console.log(`地形サイズ: ${geoWidth} x ${geoHeight}`);
     
     // 立ち上げたPlaneGeometryの底面が原点0になるようにジオメトリを下げる
     const minValue = minElevation;

@@ -145,6 +145,230 @@ header h1 {
     transition: all 0.3s ease;
 }
 
+/* ビューアモード選択器 */
+.viewer-mode-selector {
+    display: flex;
+    gap: 5px;
+    margin-right: 15px;
+}
+
+.mode-btn {
+    padding: 8px 16px;
+    border: 2px solid #007acc;
+    background: transparent;
+    color: #007acc;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.mode-btn:hover {
+    background: #007acc;
+    color: white;
+}
+
+.mode-btn.active {
+    background: #007acc;
+    color: white;
+    box-shadow: 0 2px 4px rgba(0, 122, 204, 0.3);
+}
+
+/* Babylon.js ビューアコンテナ */
+.babylon-viewer-container {
+    width: 100%;
+    height: 100%;
+    position: relative;
+}
+
+/* Babylon.js ファイルアップロード */
+.babylon-file-upload {
+    display: inline-block;
+}
+
+.babylon-file-upload .upload-btn {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+}
+
+.babylon-file-upload .upload-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(102, 126, 234, 0.4);
+}
+
+/* Babylon.js コントロールパネル */
+.babylon-controls-panel {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 20px;
+    width: 300px;
+    height: 100%;
+    overflow-y: auto;
+    box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+}
+
+.babylon-controls-panel h3 {
+    margin: 0 0 20px 0;
+    font-size: 18px;
+    font-weight: 600;
+    text-align: center;
+    border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+    padding-bottom: 10px;
+}
+
+.babylon-controls-panel h4 {
+    margin: 15px 0 10px 0;
+    font-size: 16px;
+    font-weight: 500;
+    color: #f0f0f0;
+}
+
+/* コントロールグループ */
+.control-group {
+    margin-bottom: 20px;
+}
+
+.control-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 500;
+    color: #f0f0f0;
+}
+
+.control-group .checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.control-group .checkbox-label input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: #007acc;
+}
+
+/* スライダー */
+.slider {
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.3);
+    outline: none;
+    -webkit-appearance: none;
+}
+
+.slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #007acc;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.slider::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #007acc;
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* 地形情報 */
+.terrain-info {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 20px;
+}
+
+.info-item {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    font-size: 14px;
+}
+
+.info-item span:first-child {
+    font-weight: 500;
+    color: #e0e0e0;
+}
+
+.info-item span:last-child {
+    color: #f0f0f0;
+    font-family: 'Courier New', monospace;
+}
+
+/* コントロールボタン */
+.control-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.control-btn {
+    padding: 10px 15px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(10px);
+}
+
+.control-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.5);
+    transform: translateY(-2px);
+}
+
+.reset-btn:hover {
+    background: rgba(0, 122, 204, 0.3);
+    border-color: #007acc;
+}
+
+.clear-btn:hover {
+    background: rgba(220, 53, 69, 0.3);
+    border-color: #dc3545;
+}
+
+/* 操作説明 */
+.instructions {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 15px;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.instructions ul {
+    margin: 10px 0 0 0;
+    padding-left: 20px;
+}
+
+.instructions li {
+    margin-bottom: 5px;
+    color: #e0e0e0;
+}
+
 .main-content.full-width {
     width: 100%;
 }
