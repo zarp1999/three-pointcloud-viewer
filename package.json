@@ -40,6 +40,8 @@
     "webpack-dev-server": "^4.15.0"
   },
   "dependencies": {
+    "@loaders.gl/core": "^4.3.4",
+    "@loaders.gl/las": "^4.3.4",
     "geotiff": "^2.0.7",
     "potree-core": "^2.0.11",
     "react": "^18.2.0",

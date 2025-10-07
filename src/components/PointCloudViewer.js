@@ -19,6 +19,8 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import Stats from 'three/examples/jsm/libs/stats.module.js';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { fromArrayBuffer } from 'geotiff';
+import { load } from '@loaders.gl/core';
+import { LASLoader } from '@loaders.gl/las';
 
 /**
  * 点群ビューアコンポーネント
@@ -47,12 +49,18 @@ const PointCloudViewer = forwardRef(({
   const rendererRef = useRef(null);
   const controlsRef = useRef(null);
   const currentPointCloudRef = useRef(null);
+  const pointCloudObjectRef = useRef(null);
+  const terrainObjectRef = useRef(null);
   const animationIdRef = useRef(null);
   const statsRef = useRef(null);
   const lodManagerRef = useRef(null);
   const raycasterRef = useRef(null);
   const mouseRef = useRef(null);
   const gridHelperRef = useRef(null);
+  const pointCloudsRef = useRef([]); // 複数点群
+  const terrainsRef = useRef([]);    // 複数地形
+  const globalMinYRef = useRef(0);
+  const webglContextLostRef = useRef(false); // WebGLコンテキストロス状態
 
   // 点群情報の状態
   const [pointCloudInfo, setPointCloudInfo] = useState(null);
@@ -205,10 +213,28 @@ const PointCloudViewer = forwardRef(({
     cameraRef.current = camera;
 
     // レンダラーを作成
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const renderer = new THREE.WebGLRenderer({ 
+      antialias: true,
+      preserveDrawingBuffer: true,
+      powerPreference: "high-performance"
+    });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // ピクセル比を制限
     rendererRef.current = renderer;
+
+    // WebGLコンテキストロスイベントリスナーを追加
+    renderer.domElement.addEventListener('webglcontextlost', (event) => {
+      console.warn('WebGLコンテキストが失われました');
+      webglContextLostRef.current = true;
+      event.preventDefault();
+    });
+
+    renderer.domElement.addEventListener('webglcontextrestored', () => {
+      console.log('WebGLコンテキストが復旧しました');
+      webglContextLostRef.current = false;
+      // レンダラーを再初期化
+      initThreeJS();
+    });
 
     // コンテナにレンダラーを追加
     if (containerRef.current) {
@@ -291,7 +317,7 @@ const PointCloudViewer = forwardRef(({
    * ウィンドウリサイズ処理
    */
   const onWindowResize = () => {
-    if (cameraRef.current && rendererRef.current) {
+    if (cameraRef.current && rendererRef.current && !webglContextLostRef.current) {
       cameraRef.current.aspect = window.innerWidth / window.innerHeight;
       cameraRef.current.updateProjectionMatrix();
       rendererRef.current.setSize(window.innerWidth, window.innerHeight);
@@ -309,7 +335,7 @@ const PointCloudViewer = forwardRef(({
       hasScene: !!sceneRef.current
     });
 
-    if (!isMeasurementModeRef.current || !currentPointCloudRef.current || !cameraRef.current || !sceneRef.current) {
+    if (!isMeasurementModeRef.current || !cameraRef.current || !sceneRef.current) {
       console.log('計測モードが無効または必要な参照がありません');
       return;
     }
@@ -324,8 +350,13 @@ const PointCloudViewer = forwardRef(({
     // レイキャスターを更新
     raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
 
-    // 点群との交差を計算
-    const intersects = raycasterRef.current.intersectObject(currentPointCloudRef.current);
+    // 計測対象（点群と地形の両方）
+    const targets = [];
+    if (pointCloudsRef.current.length) targets.push(...pointCloudsRef.current);
+    if (terrainsRef.current.length) targets.push(...terrainsRef.current);
+
+    // 交差を計算
+    const intersects = raycasterRef.current.intersectObjects(targets, true);
     console.log('交差点数:', intersects.length);
 
     if (intersects.length > 0) {
@@ -487,6 +518,11 @@ const PointCloudViewer = forwardRef(({
    * アニメーションループ
    */
   const animate = () => {
+    // WebGLコンテキストが失われている場合はアニメーションを停止
+    if (webglContextLostRef.current) {
+      return;
+    }
+
     animationIdRef.current = requestAnimationFrame(animate);
     
     // Stats Panelの更新
@@ -504,7 +540,14 @@ const PointCloudViewer = forwardRef(({
     }
     
     if (rendererRef.current && sceneRef.current && cameraRef.current) {
-      rendererRef.current.render(sceneRef.current, cameraRef.current);
+      try {
+        rendererRef.current.render(sceneRef.current, cameraRef.current);
+      } catch (error) {
+        console.error('レンダリングエラー:', error);
+        if (error.message.includes('WebGL context')) {
+          webglContextLostRef.current = true;
+        }
+      }
     }
     
     // Stats Panelの更新終了
@@ -887,10 +930,12 @@ const PointCloudViewer = forwardRef(({
    * @param {number} maxElevation - 最大標高
    */
   const createTerrainSurface = (geometry, minElevation, maxElevation) => {
-    // 既存の地形を削除
-    if (currentPointCloudRef.current && sceneRef.current) {
-      sceneRef.current.remove(currentPointCloudRef.current);
+    // WebGLコンテキストが失われている場合は処理を停止
+    if (webglContextLostRef.current) {
+      console.warn('WebGLコンテキストが失われているため、地形の作成をスキップします');
+      return;
     }
+
     geometry.rotateX(-Math.PI / 2);
     // 境界を計算
     geometry.computeBoundingBox();
@@ -909,11 +954,14 @@ const PointCloudViewer = forwardRef(({
 
     // 地形メッシュを作成
     const terrainMesh = new THREE.Mesh(geometry, material);
-    currentPointCloudRef.current = terrainMesh;
+    terrainObjectRef.current = terrainMesh;
+    terrainsRef.current = [...terrainsRef.current, terrainMesh];
     sceneRef.current.add(terrainMesh);
-    // グリッドを地形の下端に追従
-    if (gridHelperRef.current && geometry.boundingBox) {
-      gridHelperRef.current.position.y = geometry.boundingBox.min.y;
+    // グリッドを全体の下端に追従
+    if (gridHelperRef.current && geometry && geometry.boundingBox) {
+      const y = geometry.boundingBox.min.y;
+      globalMinYRef.current = Math.min(globalMinYRef.current, y);
+      gridHelperRef.current.position.y = globalMinYRef.current;
     }
 
     // カメラを地形の中心に移動
@@ -955,6 +1003,64 @@ const PointCloudViewer = forwardRef(({
     onPointCloudLoaded(info);
   };
 
+
+  /**
+   * LAZファイルを読み込む（loaders.gl使用）
+   * @param {File} file - LAZファイル
+   */
+  const loadLAZFile = async (file) => {
+    try {
+      console.log('LAZファイルを読み込み中...', file.name);
+      const arrayBuffer = await file.arrayBuffer();
+
+      // loaders.gl LASLoaderはLAZも透過的にデコード可能
+      const parsed = await load(arrayBuffer, LASLoader, {
+        las: {
+          skip: 1, // すべての点を読む場合は1、重ければ2,4...に調整
+          color: true
+        }
+      });
+
+      if (!parsed || !parsed.attributes || !parsed.attributes.POSITION) {
+        throw new Error('LAZ解析結果に位置属性がありません');
+      }
+
+      const positionsAttr = parsed.attributes.POSITION.value; // Float32Array [x,y,z,...]
+      const colorsAttr = parsed.attributes.COLOR_0 ? parsed.attributes.COLOR_0.value : null; // Uint16Array or Float32Array
+
+      const pointCount = positionsAttr.length / 3;
+      console.log(`LAZ解析: 点数 ${pointCount}`);
+
+      // Three.jsのジオメトリを作成
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positionsAttr), 3));
+
+      if (colorsAttr) {
+        // loaders.glのCOLOR_0は通常0-255(または0-65535)の整数。0-1に正規化
+        const colorArray = new Float32Array(pointCount * 3);
+        const divisor = colorsAttr instanceof Uint16Array ? 65535.0 : 255.0;
+        for (let i = 0; i < pointCount; i++) {
+          colorArray[i * 3] = colorsAttr[i * 3] / divisor;
+          colorArray[i * 3 + 1] = colorsAttr[i * 3 + 1] / divisor;
+          colorArray[i * 3 + 2] = colorsAttr[i * 3 + 2] / divisor;
+        }
+        geometry.setAttribute('color', new THREE.BufferAttribute(colorArray, 3));
+      }
+
+      // 境界・球を計算
+      geometry.computeBoundingBox();
+      geometry.computeBoundingSphere();
+
+      // three座標系に合わせ回転（既存LASと整合）
+      geometry.rotateX(-Math.PI / 2);
+
+      // 点群作成・追加
+      createPointCloud(geometry);
+    } catch (error) {
+      console.error('LAZファイル読み込みエラー:', error);
+      throw new Error('LAZファイルの読み込みに失敗しました: ' + error.message);
+    }
+  };
 
   /**
    * LASファイルのヘッダーを解析する
@@ -1286,9 +1392,10 @@ const PointCloudViewer = forwardRef(({
    * @param {THREE.BufferGeometry} geometry - ジオメトリ
    */
   const createPointCloud = (geometry) => {
-    // 既存の点群を削除
-    if (currentPointCloudRef.current && sceneRef.current) {
-      sceneRef.current.remove(currentPointCloudRef.current);
+    // WebGLコンテキストが失われている場合は処理を停止
+    if (webglContextLostRef.current) {
+      console.warn('WebGLコンテキストが失われているため、点群の作成をスキップします');
+      return;
     }
 
     // 法線を計算
@@ -1309,10 +1416,14 @@ const PointCloudViewer = forwardRef(({
     // 点群を作成
     const pointCloud = new THREE.Points(geometry, material);
     currentPointCloudRef.current = pointCloud;
+    pointCloudObjectRef.current = pointCloud;
+    pointCloudsRef.current = [...pointCloudsRef.current, pointCloud];
     sceneRef.current.add(pointCloud);
-    // グリッドを点群の下端に追従
-    if (gridHelperRef.current && geometry.boundingBox) {
-      gridHelperRef.current.position.y = geometry.boundingBox.min.y;
+    // グリッドを全体の下端に追従
+    if (gridHelperRef.current && geometry && geometry.boundingBox) {
+      const y = geometry.boundingBox.min.y;
+      globalMinYRef.current = Math.min(globalMinYRef.current, y);
+      gridHelperRef.current.position.y = globalMinYRef.current;
     }
 
     // LOD管理に点群を設定
@@ -1354,15 +1465,43 @@ const PointCloudViewer = forwardRef(({
    * ビューをリセットする
    */
   const resetView = () => {
-    if (currentPointCloudRef.current && sceneRef.current) {
-      sceneRef.current.remove(currentPointCloudRef.current);
+    if (sceneRef.current) {
+      // すべての点群を削除
+      if (pointCloudsRef.current.length) {
+        pointCloudsRef.current.forEach(pc => {
+          if (pc.geometry) pc.geometry.dispose();
+          if (pc.material) pc.material.dispose();
+          sceneRef.current.remove(pc);
+        });
+        pointCloudsRef.current = [];
+      }
+      // すべての地形を削除
+      if (terrainsRef.current.length) {
+        terrainsRef.current.forEach(t => {
+          if (t.geometry) t.geometry.dispose();
+          if (t.material) t.material.dispose();
+          sceneRef.current.remove(t);
+        });
+        terrainsRef.current = [];
+      }
       currentPointCloudRef.current = null;
+      pointCloudObjectRef.current = null;
+      terrainObjectRef.current = null;
       setPointCloudInfo(null);
+      globalMinYRef.current = 0;
+      if (gridHelperRef.current) gridHelperRef.current.position.y = 0;
 
       // カメラをリセット
-      cameraRef.current.position.set(0, 0, 5);
-      controlsRef.current.target.set(0, 0, 0);
-      controlsRef.current.update();
+      if (cameraRef.current) {
+        cameraRef.current.position.set(0, 0, 5);
+      }
+      if (controlsRef.current) {
+        controlsRef.current.target.set(0, 0, 0);
+        controlsRef.current.update();
+      }
+
+      // WebGLコンテキストをリセット
+      webglContextLostRef.current = false;
     }
   };
 
@@ -1391,6 +1530,8 @@ const PointCloudViewer = forwardRef(({
 
         if (fileExtension === 'las') {
             await loadLASFile(file);
+        } else if (fileExtension === 'laz') {
+          await loadLAZFile(file);
         } else if (fileExtension === 'tif' || fileExtension === 'tiff') {
           await loadGeoTIFFFile(file);
           } else {

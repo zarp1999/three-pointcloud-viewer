@@ -39,13 +39,13 @@ const FileUpload = ({ onFileLoad, onLoadingChange, viewerRef }) => {
       <input 
         type="file" 
         id="fileInput" 
-        accept=".las,.tif,.tiff" 
+        accept=".las,.laz,.tif,.tiff" 
         ref={fileInputRef}
         onChange={handleFileChange}
         style={{ display: 'none' }}
       />
       <button onClick={handleLoadButtonClick}>
-        データを読み込み（LAS/GeoTIFF）
+        データを読み込み（LAS/LAZ/GeoTIFF）
       </button>
     </div>
   );
