@@ -45,9 +45,9 @@ const ControlsPanel = ({
         <input 
           type="range" 
           id="pointSize" 
-          min="0.001" 
-          max="0.1" 
-          step="0.001" 
+          min="0.01" 
+          max="1.0" 
+          step="0.01" 
           value={pointSize}
           onChange={handlePointSizeChange}
         />

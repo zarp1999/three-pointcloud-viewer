@@ -46,6 +46,7 @@ const LODPointCloudViewer = forwardRef(({
   const animationIdRef = useRef(null);
   const statsRef = useRef(null);
   const lodManagerRef = useRef(null);
+  const gridHelperRef = useRef(null);
 
   // 点群情報の状態
   const [pointCloudInfo, setPointCloudInfo] = useState(null);
@@ -255,6 +256,14 @@ const LODPointCloudViewer = forwardRef(({
     directionalLight.position.set(1, 1, 1);
     scene.add(directionalLight);
 
+    // 床（GridHelper を常設し、後で高さを追従させる）
+    const gridHelper = new THREE.GridHelper(100000, 2000, 0x444444, 0x222222);
+    gridHelper.material.transparent = true;
+    gridHelper.material.opacity = 0.35;
+    gridHelper.position.y = 0;
+    scene.add(gridHelper);
+    gridHelperRef.current = gridHelper;
+
     // Stats Panelを初期化
     const stats = new Stats();
     stats.showPanel(0); // フレームレートパネルを表示
@@ -351,6 +360,10 @@ const LODPointCloudViewer = forwardRef(({
     const pointCloud = new THREE.Points(geometry, material);
     currentPointCloudRef.current = pointCloud;
     sceneRef.current.add(pointCloud);
+    // グリッドを点群の下端に追従
+    if (gridHelperRef.current && geometry.boundingBox) {
+      gridHelperRef.current.position.y = geometry.boundingBox.min.y;
+    }
 
     // LOD管理に点群を設定
     if (lodManagerRef.current) {

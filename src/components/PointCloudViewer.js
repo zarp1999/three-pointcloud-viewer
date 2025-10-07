@@ -16,11 +16,9 @@
 import React, { forwardRef, useImperativeHandle, useRef, useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import Stats from 'three/examples/jsm/libs/stats.module.js';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
-import { loadGeoTiff } from '../utils/geotiff/GeoTiffLoader';
-import { createTerrainMesh as buildTerrainMesh, createTerrainSurface as mountTerrain } from '../utils/geotiff/TerrainBuilder';
+import { fromArrayBuffer } from 'geotiff';
 
 /**
  * 点群ビューアコンポーネント
@@ -49,20 +47,15 @@ const PointCloudViewer = forwardRef(({
   const rendererRef = useRef(null);
   const controlsRef = useRef(null);
   const currentPointCloudRef = useRef(null);
-  const pointCloudsRef = useRef([]); // 複数の点群を管理
-  const currentTerrainRef = useRef(null);
   const animationIdRef = useRef(null);
   const statsRef = useRef(null);
   const lodManagerRef = useRef(null);
-  const transformControlsRef = useRef(null);
   const raycasterRef = useRef(null);
   const mouseRef = useRef(null);
-  const gridRef = useRef(null);
+  const gridHelperRef = useRef(null);
 
   // 点群情報の状態
   const [pointCloudInfo, setPointCloudInfo] = useState(null);
-  const [pointClouds, setPointClouds] = useState([]); // 複数点群の情報
-  const [terrainInfo, setTerrainInfo] = useState(null);
 
   // 距離計測機能の状態
   const [isMeasurementMode, setIsMeasurementMode] = useState(false);
@@ -228,16 +221,6 @@ const PointCloudViewer = forwardRef(({
     controls.dampingFactor = 0.05;
     controlsRef.current = controls;
 
-    // TransformControls を設定（オブジェクト操作用）
-    const transform = new TransformControls(camera, renderer.domElement);
-    transform.setMode('translate');
-    transform.addEventListener('dragging-changed', (event) => {
-      // ドラッグ中はオービット操作を無効化
-      if (controlsRef.current) controlsRef.current.enabled = !event.value;
-    });
-    scene.add(transform);
-    transformControlsRef.current = transform;
-
     // レイキャスターとマウスを初期化
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
@@ -255,7 +238,8 @@ const PointCloudViewer = forwardRef(({
     scene.add(ambientLight);
 
     const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
-    directionalLight.position.copy(sun);
+    // directionalLight.position.copy(sun);
+    directionalLight.position.set(1, 1, 1);
     scene.add(directionalLight);
     
     // 太陽光の色を調整（暖かい色合い）
@@ -266,12 +250,13 @@ const PointCloudViewer = forwardRef(({
     additionalLight.position.set(-1, -1, 1);
     scene.add(additionalLight);
 
-    // グリッドを追加
-    const grid = new THREE.GridHelper(1000, 100, 0x444444, 0x888888);
-    grid.position.y = -0.001; // 少し下に配置してZファイティングを回避
-    scene.add(grid);
-    gridRef.current = grid;
-
+    // 床（GridHelper を常設し、後で高さを追従させる）
+    const gridHelper = new THREE.GridHelper(1000, 100, 0x444444, 0x888888);
+    gridHelper.material.transparent = true;
+    gridHelper.material.opacity = 0.35;
+    gridHelper.position.y = 0;
+    scene.add(gridHelper);
+    gridHelperRef.current = gridHelper;
 
     // Stats Panelを初期化
     const stats = new Stats();
@@ -301,13 +286,6 @@ const PointCloudViewer = forwardRef(({
     // アニメーションループを開始
     animate();
   };
-
-  /**
-   * 床（フロア）とグリッドを作成してシーンに追加
-   * 地形の最小標高を0に合わせているため、床は y=0 付近に配置
-   * わずかに下げてZファイティングを防止
-   */
-  // 旧フロア生成はFloorGenerationSystemに置き換え
 
   /**
    * ウィンドウリサイズ処理
@@ -520,7 +498,6 @@ const PointCloudViewer = forwardRef(({
       controlsRef.current.update();
     }
     
-
     // LOD更新
     if (lodManagerRef.current) {
       lodManagerRef.current.updateLOD();
@@ -631,7 +608,7 @@ const PointCloudViewer = forwardRef(({
 
           console.log('点群の作成を開始...');
           geometry.rotateX(-Math.PI / 2);
-          createPointCloud(geometry, file.name);
+          createPointCloud(geometry);
           resolve();
         } catch (error) {
           console.error('LASファイル読み込みエラー:', error);
@@ -651,12 +628,35 @@ const PointCloudViewer = forwardRef(({
   const loadGeoTIFFFile = async (file) => {
     try {
       console.log('GeoTIFFファイルを読み込み中...', file.name);
-      const { image, width, height, elevationArray, bbox } = await loadGeoTiff(file);
+
+      const arrayBuffer = await file.arrayBuffer();
+      const tiff = await fromArrayBuffer(arrayBuffer);
+      const image = await tiff.getImage();
+      
+      // 画像のサイズを取得
+      const width = image.getWidth();
+      const height = image.getHeight();
       
       console.log(`GeoTIFF画像サイズ: ${width} x ${height}`);
       
+      // 標高データを読み込み
+      const elevationData = await image.readRasters();
+      const elevationArray = elevationData[0]; // 最初のバンド（標高データ）
+      
+      // 地理情報を取得
+      const bbox = image.getBoundingBox();
+      const pixelWidth = image.getWidth();
+      const pixelHeight = image.getHeight();
+      
+      // ピクセル解像度を取得
+      const fileDirectory = image.getFileDirectory();
+      const modelPixelScale = fileDirectory.ModelPixelScale;
+      const dx = modelPixelScale ? modelPixelScale[0] : 1;
+      const dy = modelPixelScale ? modelPixelScale[1] : 1;
+      
       console.log('GeoTIFF境界:', bbox);
-      console.log(`ピクセルサイズ: ${width} x ${height}`);
+      console.log(`ピクセルサイズ: ${pixelWidth} x ${pixelHeight}`);
+      console.log(`ピクセル解像度: ${dx} x ${dy}`);
       
       // 標高データの統計を計算（無効な値を除外して安全に処理）
       let minElevation = null;
@@ -699,23 +699,10 @@ const PointCloudViewer = forwardRef(({
       }
       
       // 3D地形メッシュを生成
-      const { geometry, minElevation: minEl, maxElevation: maxEl, verticalExaggeration } = buildTerrainMesh(elevationArray, width, height, bbox, step);
+      const geometry = createTerrainMesh(elevationArray, width, height, bbox, step);
       
       // 地形を表示
-      mountTerrain(
-        sceneRef.current,
-        geometry,
-        minEl,
-        maxEl,
-        verticalExaggeration,
-        {
-          currentTerrainRef,
-          cameraRef,
-          controlsRef,
-          setPointCloudInfo: setTerrainInfo,
-          onPointCloudLoaded
-        }
-      );
+      createTerrainSurface(geometry, minElevation, maxElevation);
       
     } catch (error) {
       console.error('GeoTIFFファイル読み込みエラー:', error);
@@ -732,7 +719,123 @@ const PointCloudViewer = forwardRef(({
    * @param {number} step - サンプリングステップ（デフォルト: 1）
    * @returns {THREE.BufferGeometry} 地形メッシュのジオメトリ
    */
-  const createTerrainMesh = () => {};
+  const createTerrainMesh = (elevationData, width, height, bbox, step = 1) => {
+    // 地理座標から3D座標への変換
+    const minX = bbox[0];
+    const minY = bbox[1];
+    const maxX = bbox[2];
+    const maxY = bbox[3];
+    
+    const scaleX = (maxX - minX) / (width - 1);
+    const scaleY = (maxY - minY) / (height - 1);
+    
+    // 標高の正規化用（無効な値を除外して安全に処理）
+    let minElevation = null;
+    let maxElevation = null;
+    
+    // 有効な標高値を探す
+    for (let i = 0; i < elevationData.length; i++) {
+      const elevation = elevationData[i];
+      if (elevation !== null && elevation !== undefined && !isNaN(elevation) && isFinite(elevation)) {
+        if (minElevation === null) {
+          minElevation = elevation;
+          maxElevation = elevation;
+            } else {
+          if (elevation < minElevation) minElevation = elevation;
+          if (elevation > maxElevation) maxElevation = elevation;
+        }
+      }
+    }
+    
+    // 有効な標高値が見つからない場合のデフォルト値
+    if (minElevation === null || maxElevation === null) {
+      minElevation = 0;
+      maxElevation = 100;
+      console.warn('有効な標高データが見つかりません。デフォルト値を使用します。');
+    }
+    
+    const elevationRange = maxElevation - minElevation;
+    
+    // サンプリング後のサイズを計算
+    const newWidth = Math.ceil(width / step);
+    const newHeight = Math.ceil(height / step);
+    
+    // 地理座標でのサイズを計算
+    const geoWidth = (maxX - minX);
+    const geoHeight = (maxY - minY);
+    
+    // PlaneGeometryを作成（ラスターのピクセル数分の頂点を持つ）
+    const geometry = new THREE.PlaneGeometry(
+      geoWidth, 
+      geoHeight, 
+      newWidth - 1, 
+      newHeight - 1
+    );
+    
+    // PlaneGeometryはデフォルトでXZ平面に配置されるため、回転は不要
+    // geometry.rotateX(-Math.PI / 2); // この行をコメントアウト
+    
+    // PlaneGeometryの頂点座標をDEMの値に置き換える
+    const vertices = geometry.attributes.position.array;
+    
+    // 頂点カラー配列を作成
+    const colors = [];
+    
+    // DEMの値を元に、vertices配列のY座標を更新して頂点を立ち上げる
+    let vertexIndex = 0;
+    for (let y = 0; y < newHeight; y++) {
+      for (let x = 0; x < newWidth; x++) {
+        const dataIndex = Math.floor(y * step) * width + Math.floor(x * step);
+        const elevation = elevationData[dataIndex];
+        
+        // 無効な標高値の場合は最小値を使用
+        const validElevation = (elevation !== null && elevation !== undefined && !isNaN(elevation) && isFinite(elevation)) 
+          ? elevation 
+          : minElevation;
+        
+        // 3D座標を計算（ピクセル座標モードまたは地理座標モード）
+        let worldY; // PlaneGeometryではY座標が高さ
+        
+        // 標高差が小さい場合はピクセル座標を使用（Pythonと同じ表示）
+        if (elevationRange < 1000) {
+          worldY = validElevation;
+          console.log('ピクセル座標モードを使用');
+        } else {
+          // 地理座標モード
+          worldY = validElevation * getVerticalExaggeration(elevationRange);
+          console.log('地理座標モードを使用');
+        }
+        
+        // 頂点のY座標（高さ）を更新（PlaneGeometryではY軸が高さ）
+        vertices[vertexIndex + 1] = worldY;
+        
+        // 標高に基づく色を計算
+        const normalizedElevation = elevationRange > 0 ? (validElevation - minElevation) / elevationRange : 0;
+        const color = getTerrainColor(normalizedElevation);
+        colors.push(color.r, color.g, color.b);
+        
+        vertexIndex += 3;
+      }
+    }
+    
+    // 頂点カラーを設定
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    
+    // デバッグ情報を出力
+    console.log(`PlaneGeometry頂点数: ${vertices.length / 3}`);
+    console.log(`色数: ${colors.length / 3}`);
+    console.log(`標高範囲: ${minElevation} - ${maxElevation}`);
+    console.log(`地形サイズ: ${geoWidth} x ${geoHeight}`);
+    
+    // 立ち上げたPlaneGeometryの底面が原点0になるようにジオメトリを下げる
+    const minValue = minElevation;
+    geometry.translate(0, -minValue, 0);
+    
+    // 法線を再計算
+    geometry.computeVertexNormals();
+    
+    return geometry;
+  };
 
   /**
    * 垂直強調係数を取得
@@ -783,7 +886,74 @@ const PointCloudViewer = forwardRef(({
    * @param {number} minElevation - 最小標高
    * @param {number} maxElevation - 最大標高
    */
-  const createTerrainSurface = () => {};
+  const createTerrainSurface = (geometry, minElevation, maxElevation) => {
+    // 既存の地形を削除
+    if (currentPointCloudRef.current && sceneRef.current) {
+      sceneRef.current.remove(currentPointCloudRef.current);
+    }
+    geometry.rotateX(-Math.PI / 2);
+    // 境界を計算
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+
+    // マテリアルを作成（PlaneGeometry用、頂点カラー対応）
+    const material = new THREE.MeshPhongMaterial({
+      vertexColors: true, // 頂点カラーを使用
+      side: THREE.DoubleSide, // 裏面も表示
+      shininess: 10,
+      specular: 0x000000,
+      emissive: 0x000000,
+      transparent: false,
+      opacity: 1.0
+    });
+
+    // 地形メッシュを作成
+    const terrainMesh = new THREE.Mesh(geometry, material);
+    currentPointCloudRef.current = terrainMesh;
+    sceneRef.current.add(terrainMesh);
+    // グリッドを地形の下端に追従
+    if (gridHelperRef.current && geometry.boundingBox) {
+      gridHelperRef.current.position.y = geometry.boundingBox.min.y;
+    }
+
+    // カメラを地形の中心に移動
+    const center = geometry.boundingSphere.center;
+    const radius = geometry.boundingSphere.radius;
+
+    console.log(`地形の中心: (${center.x.toFixed(3)}, ${center.y.toFixed(3)}, ${center.z.toFixed(3)})`);
+    console.log(`地形の半径: ${radius.toFixed(3)}`);
+
+    // カメラを地形の外側に配置（地形の起伏を考慮）
+    const elevationRange = maxElevation - minElevation;
+    const verticalExaggeration = getVerticalExaggeration(elevationRange);
+    const adjustedRadius = Math.max(radius, elevationRange * verticalExaggeration * 0.1);
+    const distance = Math.max(adjustedRadius * 1.5, 100);
+    
+    // カメラを斜め上から見下ろす角度に配置
+    cameraRef.current.position.set(
+      center.x + distance * 0.7,
+      center.y + distance * 0.7,
+      center.z + distance * 0.5
+    );
+    controlsRef.current.target.copy(center);
+    controlsRef.current.update();
+    
+    console.log(`垂直強調係数: ${verticalExaggeration}x`);
+    console.log(`調整された半径: ${adjustedRadius.toFixed(2)}`);
+    console.log(`カメラ距離: ${distance.toFixed(2)}`);
+
+    // 地形情報を保存
+    const info = {
+      type: 'terrain',
+      count: geometry.attributes.position.count,
+      bounds: geometry.boundingBox,
+      center: center,
+      radius: radius,
+      elevationRange: { min: minElevation, max: maxElevation }
+    };
+    setPointCloudInfo(info);
+    onPointCloudLoaded(info);
+  };
 
 
   /**
@@ -903,9 +1073,9 @@ const PointCloudViewer = forwardRef(({
     const recordLength = header.pointDataRecordLength;
     const pointDataFormat = header.pointDataFormat;
 
-    // LODシステムが自動調整するため、全点を読み込み
+    // LODシステムが自動調整するため、 2点ごとに読み込み
     const maxPoints = header.totalPoints;
-    const step = 1; // 全点を読み込み
+    const step = 2; // 2点ごとに読み込み
 
     console.log(`点群データを読み込み中... (最大${maxPoints}点, LODシステムで自動調整)`);
 
@@ -945,7 +1115,7 @@ const PointCloudViewer = forwardRef(({
               colorOffset = 28; // RGB情報のオフセット（X,Y,Z,Intensity,Return,Class,ScanAngle,UserData,PointSourceID,GPS_Time,Red,Green,Blue）
               break;
             case 7:
-              colorOffset = 28; // RGB情報のオフセット（X,Y,Z,Intensity,Return,Class,ScanAngle,UserData,PointSourceID,GPS_Time,Red,Green,Blue）
+              colorOffset = 30; // RGB情報のオフセット（X,Y,Z,Intensity,Return,Class,ScanAngle,UserData,PointSourceID,GPS_Time,Red,Green,Blue）
               break;
             case 8:
               colorOffset = 30; // RGB情報のオフセット（X,Y,Z,Intensity,Return,Class,ScanAngle,UserData,PointSourceID,GPS_Time,Red,Green,Blue）
@@ -983,8 +1153,8 @@ const PointCloudViewer = forwardRef(({
 
         points.push(point);
 
-        // 進捗表示（10万点ごと）
-        if (i > 0 && i % 100000 === 0) {
+        // 進捗表示（1000万点ごと）
+        if (i > 0 && i % 1000000 === 0) {
           console.log(`読み込み進捗: ${i}/${maxPoints} 点`);
         }
       } catch (error) {
@@ -1008,11 +1178,11 @@ const PointCloudViewer = forwardRef(({
       this.controls = controls;
       this.lodLevels = [
         { maxDistance: 50, pointLimit: 1000000, step: 1 },    // 最高詳細度
-        { maxDistance: 100, pointLimit: 500000, step: 2 },  // 高詳細度
-        { maxDistance: 200, pointLimit: 250000, step: 4 },  // 中詳細度
-        { maxDistance: 500, pointLimit: 100000, step: 8 },  // 低詳細度
-        { maxDistance: 1000, pointLimit: 50000, step: 16 }, // 最低詳細度
-        { maxDistance: Infinity, pointLimit: 25000, step: 32 } // 遠景
+        { maxDistance: 100, pointLimit: 800000, step: 2 },  // 高詳細度
+        { maxDistance: 200, pointLimit: 600000, step: 4 },  // 中詳細度
+        { maxDistance: 500, pointLimit: 400000, step: 6 },  // 低詳細度
+        { maxDistance: 1000, pointLimit: 200000, step: 8 }, // 最低詳細度
+        { maxDistance: Infinity, pointLimit: 100000, step: 10 } // 遠景
       ];
       this.currentLodLevel = 0;
       this.pointCloud = null;
@@ -1115,8 +1285,11 @@ const PointCloudViewer = forwardRef(({
    * 点群を作成する
    * @param {THREE.BufferGeometry} geometry - ジオメトリ
    */
-  const createPointCloud = (geometry, fileName = 'pointcloud') => {
-    // 既存の点群は削除しない（複数表示のため）
+  const createPointCloud = (geometry) => {
+    // 既存の点群を削除
+    if (currentPointCloudRef.current && sceneRef.current) {
+      sceneRef.current.remove(currentPointCloudRef.current);
+    }
 
     // 法線を計算
     geometry.computeVertexNormals();
@@ -1128,35 +1301,18 @@ const PointCloudViewer = forwardRef(({
     // マテリアルを作成（点のサイズを大きくして視認性を向上）
     const material = new THREE.PointsMaterial({
       vertexColors: showColors,
-      size: Math.max(pointSize, 2.0), // 最小サイズを2.0に設定
+      size: pointSize,
       transparent: true,
       opacity: opacity
     });
 
     // 点群を作成
     const pointCloud = new THREE.Points(geometry, material);
-    const pointCloudId = Date.now();
-    pointCloud.userData = { id: pointCloudId, fileName: fileName };
-    
-    // 点群を床の上に配置（床がy=-0.001なので、点群の最低点を0以上にする）
-    const boundingBox = geometry.boundingBox;
-    if (boundingBox.min.y < 0) {
-      const offsetY = -boundingBox.min.y + 0.1; // 床より少し上に配置
-      pointCloud.position.y = offsetY;
-      console.log(`点群を床の上に移動: Y座標に${offsetY.toFixed(3)}を追加`);
-    }
-    
-    // 点群を配列に追加
-    pointCloudsRef.current.push(pointCloud);
-    sceneRef.current.add(pointCloud);
-
-    // 最新の点群を現在の点群として設定
     currentPointCloudRef.current = pointCloud;
-
-    // TransformControls にアタッチして手動移動を可能に
-    if (transformControlsRef.current) {
-      transformControlsRef.current.attach(pointCloud);
-      transformControlsRef.current.visible = true;
+    sceneRef.current.add(pointCloud);
+    // グリッドを点群の下端に追従
+    if (gridHelperRef.current && geometry.boundingBox) {
+      gridHelperRef.current.position.y = geometry.boundingBox.min.y;
     }
 
     // LOD管理に点群を設定
@@ -1185,72 +1341,25 @@ const PointCloudViewer = forwardRef(({
 
     // 点群情報を保存
     const info = {
-      id: pointCloudId, // 点群オブジェクトと同じID
-      type: 'pointcloud',
       count: geometry.attributes.position.count,
       bounds: geometry.boundingBox,
       center: center,
-      radius: radius,
-      fileName: fileName,
-      position: pointCloud.position.clone()
+      radius: radius
     };
-    
-    // 複数点群の情報を更新
-    setPointClouds(prev => [...prev, info]);
-    setPointCloudInfo(info); // 最新の点群情報を設定
+    setPointCloudInfo(info);
     onPointCloudLoaded(info);
-  };
-
-  /**
-   * 特定の点群を削除する
-   * @param {number} pointCloudId - 削除する点群のID
-   */
-  const removePointCloud = (pointCloudId) => {
-    const index = pointCloudsRef.current.findIndex(pc => pc.userData?.id === pointCloudId);
-    if (index !== -1 && sceneRef.current) {
-      const pointCloud = pointCloudsRef.current[index];
-      sceneRef.current.remove(pointCloud);
-      pointCloudsRef.current.splice(index, 1);
-      
-      // 状態を更新
-      setPointClouds(prev => prev.filter(info => info.id !== pointCloudId));
-      
-      // 削除された点群が現在選択されている場合、TransformControlsを無効化
-      if (currentPointCloudRef.current === pointCloud) {
-        if (transformControlsRef.current) {
-          transformControlsRef.current.detach();
-          transformControlsRef.current.visible = false;
-        }
-        currentPointCloudRef.current = null;
-        setPointCloudInfo(null);
-      }
-    }
   };
 
   /**
    * ビューをリセットする
    */
   const resetView = () => {
-    // 全ての点群を削除
-    if (pointCloudsRef.current.length > 0 && sceneRef.current) {
-      pointCloudsRef.current.forEach(pointCloud => {
-        sceneRef.current.remove(pointCloud);
-      });
-      pointCloudsRef.current = [];
+    if (currentPointCloudRef.current && sceneRef.current) {
+      sceneRef.current.remove(currentPointCloudRef.current);
       currentPointCloudRef.current = null;
-      setPointClouds([]);
       setPointCloudInfo(null);
-    }
 
-    // 地形を削除
-    if (currentTerrainRef.current && sceneRef.current) {
-      sceneRef.current.remove(currentTerrainRef.current);
-      currentTerrainRef.current = null;
-      setTerrainInfo(null);
-    }
-
-    // カメラをリセット
-    if (cameraRef.current && controlsRef.current) {
+      // カメラをリセット
       cameraRef.current.position.set(0, 0, 5);
       controlsRef.current.target.set(0, 0, 0);
       controlsRef.current.update();
@@ -1281,7 +1390,7 @@ const PointCloudViewer = forwardRef(({
         const fileExtension = file.name.split('.').pop().toLowerCase();
 
         if (fileExtension === 'las') {
-            await loadLASFile(file);4
+            await loadLASFile(file);
         } else if (fileExtension === 'tif' || fileExtension === 'tiff') {
           await loadGeoTIFFFile(file);
           } else {
@@ -1298,8 +1407,6 @@ const PointCloudViewer = forwardRef(({
     },
     toggleStats,
     resetView,
-    removePointCloud,
-    pointClouds: pointClouds,
     toggleMeasurementMode,
     clearMeasurement,
     isMeasurementMode,
