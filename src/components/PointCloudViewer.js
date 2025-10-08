@@ -19,8 +19,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import Stats from 'three/examples/jsm/libs/stats.module.js';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { fromArrayBuffer } from 'geotiff';
-import { load } from '@loaders.gl/core';
-import { LASLoader } from '@loaders.gl/las';
+// LASファイルの手動読み込みを実装
 
 /**
  * 点群ビューアコンポーネント
@@ -558,110 +557,165 @@ const PointCloudViewer = forwardRef(({
 
 
   /**
-   * LASファイルを読み込む
+   * LASファイルを読み込む（手動実装）
    * @param {File} file - LASファイル
    */
-  const loadLASFile = (file) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
+  const loadLASFile = async (file) => {
+    try {
+      console.log('LASファイルを読み込み中...', file.name);
+      
+      // LASファイルの読み込み処理（LAZファイルと同じ）
+      const arrayBuffer = await file.arrayBuffer();
+      const dataView = new DataView(arrayBuffer);
 
-      reader.onload = async (event) => {
+      // LASファイルのマジックナンバーをチェック
+      const magic = String.fromCharCode(
+        dataView.getUint8(0),
+        dataView.getUint8(1),
+        dataView.getUint8(2),
+        dataView.getUint8(3)
+      );
+
+      if (magic !== 'LASF') {
+        throw new Error('有効なLASファイルではありません。');
+      }
+
+      // ヘッダー情報を読み取り
+      const versionMajor = dataView.getUint8(24);
+      const versionMinor = dataView.getUint8(25);
+      const pointDataFormat = dataView.getUint8(104);
+      const pointDataRecordLength = dataView.getUint16(105, true);
+      const numberOfPointRecords = dataView.getUint32(107, true);
+
+      console.log(`LASバージョン: ${versionMajor}.${versionMinor}`);
+      console.log(`Point Data Format: ${pointDataFormat}`);
+      console.log(`Point Data Record Length: ${pointDataRecordLength}`);
+      console.log(`Number of Point Records: ${numberOfPointRecords}`);
+
+      // スケールとオフセット
+      const xScale = dataView.getFloat64(131, true);
+      const yScale = dataView.getFloat64(139, true);
+      const zScale = dataView.getFloat64(147, true);
+      const xOffset = dataView.getFloat64(155, true);
+      const yOffset = dataView.getFloat64(163, true);
+      const zOffset = dataView.getFloat64(171, true);
+
+      // 境界
+      const maxX = dataView.getFloat64(179, true);
+      const minX = dataView.getFloat64(187, true);
+      const maxY = dataView.getFloat64(195, true);
+      const minY = dataView.getFloat64(203, true);
+      const maxZ = dataView.getFloat64(211, true);
+      const minZ = dataView.getFloat64(219, true);
+
+      // 点データの開始位置
+      const pointDataOffset = dataView.getUint32(96, true);
+
+      console.log(`Point Data Offset: ${pointDataOffset}`);
+      console.log(`Bounds: X[${minX}, ${maxX}] Y[${minY}, ${maxY}] Z[${minZ}, ${maxZ}]`);
+
+      // 点群データを読み込み
+      const points = [];
+      const colors = [];
+      const maxPoints = Math.min(numberOfPointRecords, 100000); // パフォーマンスのため最大10万点に制限
+
+      console.log(`点群データを読み込み中... (最大${maxPoints}点)`);
+
+      for (let i = 0; i < maxPoints; i++) {
+        const recordOffset = pointDataOffset + (i * pointDataRecordLength);
+
+        if (recordOffset + pointDataRecordLength > dataView.byteLength) {
+          console.log(`点 ${i} の読み込みに失敗: データ範囲外`);
+          break;
+        }
+
         try {
-          const arrayBuffer = event.target.result;
-          const dataView = new DataView(arrayBuffer);
+          // 位置データを読み取り（Little Endian）
+          const x = dataView.getInt32(recordOffset, true);
+          const y = dataView.getInt32(recordOffset + 4, true);
+          const z = dataView.getInt32(recordOffset + 8, true);
 
-          console.log('LASファイルを読み込み中...', file.name);
+          // スケールとオフセットを適用して世界座標に変換
+          const worldX = x * xScale + xOffset;
+          const worldY = y * yScale + yOffset;
+          const worldZ = z * zScale + zOffset;
 
-          // LASファイルのヘッダーを解析
-          const header = parseLASHeader(dataView);
+          points.push(worldX, worldY, worldZ);
 
-          if (!header) {
-            throw new Error('LASファイルのヘッダーが正しく解析できませんでした。');
-          }
+          // 色情報がある場合（Point Data Format 2, 3, 5, 6, 7, 8, 10）
+          if ([2, 3, 5, 6, 7, 8, 10].includes(pointDataFormat)) {
+            let colorOffset = 20; // デフォルトの色情報オフセット
 
-          console.log('LASヘッダー情報:', header);
-          console.log(`Point Data Format: ${header.pointDataFormat}`);
-          console.log(`Point Data Record Length: ${header.pointDataRecordLength}`);
-          console.log(`Total Points: ${header.totalPoints}`);
-
-          // 点群データを解析（LODシステムが自動調整）
-          const points = parseLASPoints(dataView, header);
-
-          console.log('取得した点群数:', points.length);
-
-          if (points.length === 0) {
-            throw new Error('点群データが見つかりませんでした。');
-          }
-
-          // Three.jsのジオメトリを作成
-          const geometry = new THREE.BufferGeometry();
-
-          // 位置データを設定
-          const positions = new Float32Array(points.length * 3);
-          const colors = new Float32Array(points.length * 3);
-
-          // 座標の中心を計算（ヘッダー情報から）
-          const centerX = (header.maxX + header.minX) / 2;
-          const centerY = (header.maxY + header.minY) / 2;
-          const centerZ = (header.maxZ + header.minZ) / 2;
-          
-          console.log(`座標範囲: X[${header.minX}, ${header.maxX}], Y[${header.minY}, ${header.maxY}], Z[${header.minZ}, ${header.maxZ}]`);
-          console.log(`座標中心: (${centerX.toFixed(3)}, ${centerY.toFixed(3)}, ${centerZ.toFixed(3)})`);
-
-          for (let i = 0; i < points.length; i++) {
-            const point = points[i];
-            const i3 = i * 3;
-
-            // 位置（スケールとオフセットを適用）
-            const worldX = point.x * header.xScale + header.xOffset;
-            const worldY = point.y * header.yScale + header.yOffset;
-            const worldZ = point.z * header.zScale + header.zOffset;
-            
-            // 座標を中心からの相対位置に変換（正規化）
-            const normalizedX = worldX - centerX;
-            const normalizedY = worldY - centerY;
-            const normalizedZ = worldZ - centerZ;
-            
-            positions[i3] = normalizedX;
-            positions[i3 + 1] = normalizedY;
-            positions[i3 + 2] = normalizedZ;
-            
-            // デバッグ用：最初の数点の座標をログ出力
-            if (i < 10) {
-              console.log(`点 ${i}: 生データ(${point.x}, ${point.y}, ${point.z}) -> 世界座標(${worldX.toFixed(3)}, ${worldY.toFixed(3)}, ${worldZ.toFixed(3)}) -> 正規化座標(${normalizedX.toFixed(3)}, ${normalizedY.toFixed(3)}, ${normalizedZ.toFixed(3)})`);
+            // 各フォーマットでの色情報の位置を設定
+            switch (pointDataFormat) {
+              case 2:
+                colorOffset = 20;
+                break;
+              case 3:
+              case 5:
+              case 6:
+              case 10:
+                colorOffset = 28;
+                break;
+              case 7:
+              case 8:
+                colorOffset = 30;
+                break;
             }
 
-            // 色（RGB）- 既に正規化されているのでそのまま使用
-            if (point.red !== undefined && point.green !== undefined && point.blue !== undefined) {
-              colors[i3] = point.red;
-              colors[i3 + 1] = point.green;
-              colors[i3 + 2] = point.blue;
+            if (recordOffset + colorOffset + 6 < dataView.byteLength) {
+              // 16ビットの色情報を読み取り
+              const red = dataView.getUint16(recordOffset + colorOffset, true);
+              const green = dataView.getUint16(recordOffset + colorOffset + 2, true);
+              const blue = dataView.getUint16(recordOffset + colorOffset + 4, true);
+              
+              // 色情報を正規化（0-1の範囲に変換）
+              colors.push(red / 65535.0, green / 65535.0, blue / 65535.0);
             } else {
               // 色情報がない場合は高さに基づいて色を設定
-              const normalizedHeight = (normalizedZ - (header.minZ - centerZ)) / ((header.maxZ - centerZ) - (header.minZ - centerZ));
-              colors[i3] = Math.max(0, Math.min(1, normalizedHeight));
-              colors[i3 + 1] = Math.max(0, Math.min(1, 1.0 - normalizedHeight));
-              colors[i3 + 2] = 0.5;
+              const normalizedHeight = (worldZ - minZ) / (maxZ - minZ);
+              colors.push(Math.max(0, Math.min(1, normalizedHeight)), 
+                         Math.max(0, Math.min(1, 1.0 - normalizedHeight)), 
+                         0.5);
             }
+          } else {
+            // 色情報がない場合は高さに基づいて色を設定
+            const normalizedHeight = (worldZ - minZ) / (maxZ - minZ);
+            colors.push(Math.max(0, Math.min(1, normalizedHeight)), 
+                       Math.max(0, Math.min(1, 1.0 - normalizedHeight)), 
+                       0.5);
           }
 
-          console.log('座標正規化処理完了');
-          geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-          geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-          console.log('点群の作成を開始...');
-          geometry.rotateX(-Math.PI / 2);
-          createPointCloud(geometry);
-          resolve();
+          // 進捗表示（1万点ごと）
+          if (i > 0 && i % 10000 === 0) {
+            console.log(`読み込み進捗: ${i}/${maxPoints} 点`);
+          }
         } catch (error) {
-          console.error('LASファイル読み込みエラー:', error);
-          reject(new Error('LASファイルの読み込みに失敗しました: ' + error.message));
+          console.warn(`点 ${i} の読み込みに失敗:`, error);
+          break;
         }
-      };
+      }
 
-      reader.onerror = () => reject(new Error('ファイルの読み込みに失敗しました。'));
-      reader.readAsArrayBuffer(file);
-    });
+      console.log(`点群データ読み込み完了: ${points.length / 3} 点`);
+
+      // Three.jsのジオメトリを作成
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(points), 3));
+      geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3));
+
+      // 境界・球を計算
+      geometry.computeBoundingBox();
+      geometry.computeBoundingSphere();
+
+      // three座標系に合わせ回転（既存LASと整合）
+      geometry.rotateX(-Math.PI / 2);
+
+      // 点群作成・追加
+      createPointCloud(geometry);
+    } catch (error) {
+      console.error('LASファイル読み込みエラー:', error);
+      throw new Error('LASファイルの読み込みに失敗しました: ' + error.message);
+    }
   };
 
   /**
@@ -1005,70 +1059,17 @@ const PointCloudViewer = forwardRef(({
 
 
   /**
-   * LAZファイルを読み込む（loaders.gl使用）
+   * LAZファイルを読み込む（手動実装）
    * @param {File} file - LAZファイル
    */
   const loadLAZFile = async (file) => {
     try {
       console.log('LAZファイルを読み込み中...', file.name);
+      
+      // LAZファイルはLASファイルの圧縮版なので、まずLASファイルとして読み込みを試行
       const arrayBuffer = await file.arrayBuffer();
+      const dataView = new DataView(arrayBuffer);
 
-      // loaders.gl LASLoaderはLAZも透過的にデコード可能
-      const parsed = await load(arrayBuffer, LASLoader, {
-        las: {
-          skip: 1, // すべての点を読む場合は1、重ければ2,4...に調整
-          color: true
-        }
-      });
-
-      if (!parsed || !parsed.attributes || !parsed.attributes.POSITION) {
-        throw new Error('LAZ解析結果に位置属性がありません');
-      }
-
-      const positionsAttr = parsed.attributes.POSITION.value; // Float32Array [x,y,z,...]
-      const colorsAttr = parsed.attributes.COLOR_0 ? parsed.attributes.COLOR_0.value : null; // Uint16Array or Float32Array
-
-      const pointCount = positionsAttr.length / 3;
-      console.log(`LAZ解析: 点数 ${pointCount}`);
-
-      // Three.jsのジオメトリを作成
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positionsAttr), 3));
-
-      if (colorsAttr) {
-        // loaders.glのCOLOR_0は通常0-255(または0-65535)の整数。0-1に正規化
-        const colorArray = new Float32Array(pointCount * 3);
-        const divisor = colorsAttr instanceof Uint16Array ? 65535.0 : 255.0;
-        for (let i = 0; i < pointCount; i++) {
-          colorArray[i * 3] = colorsAttr[i * 3] / divisor;
-          colorArray[i * 3 + 1] = colorsAttr[i * 3 + 1] / divisor;
-          colorArray[i * 3 + 2] = colorsAttr[i * 3 + 2] / divisor;
-        }
-        geometry.setAttribute('color', new THREE.BufferAttribute(colorArray, 3));
-      }
-
-      // 境界・球を計算
-      geometry.computeBoundingBox();
-      geometry.computeBoundingSphere();
-
-      // three座標系に合わせ回転（既存LASと整合）
-      geometry.rotateX(-Math.PI / 2);
-
-      // 点群作成・追加
-      createPointCloud(geometry);
-    } catch (error) {
-      console.error('LAZファイル読み込みエラー:', error);
-      throw new Error('LAZファイルの読み込みに失敗しました: ' + error.message);
-    }
-  };
-
-  /**
-   * LASファイルのヘッダーを解析する
-   * @param {DataView} dataView - データビュー
-   * @returns {Object|null} ヘッダー情報
-   */
-  const parseLASHeader = (dataView) => {
-    try {
       // LASファイルのマジックナンバーをチェック
       const magic = String.fromCharCode(
         dataView.getUint8(0),
@@ -1078,45 +1079,20 @@ const PointCloudViewer = forwardRef(({
       );
 
       if (magic !== 'LASF') {
-        throw new Error('有効なLASファイルではありません。');
+        throw new Error('有効なLAS/LAZファイルではありません。');
       }
 
       // ヘッダー情報を読み取り
       const versionMajor = dataView.getUint8(24);
       const versionMinor = dataView.getUint8(25);
-
-      console.log(`LASバージョン: ${versionMajor}.${versionMinor}`);
-
-      if (versionMajor !== 1 || versionMinor > 4) {
-        throw new Error(`サポートされていないLASバージョン: ${versionMajor}.${versionMinor}`);
-      }
-
       const pointDataFormat = dataView.getUint8(104);
       const pointDataRecordLength = dataView.getUint16(105, true);
       const numberOfPointRecords = dataView.getUint32(107, true);
 
-      // LAS 1.4では、点群数は複数の場所に記録されている
-      let totalPoints = numberOfPointRecords;
-
-      // LAS 1.4の場合、拡張された点群数フィールドもチェック
-      if (versionMajor === 1 && versionMinor >= 4) {
-        const extendedLow = dataView.getUint32(247, true);
-        const extendedHigh = dataView.getUint32(251, true);
-        const extendedNumberOfPointRecords = extendedLow + (extendedHigh * 0x100000000);
-
-        console.log(`Extended Point Records (Low): ${extendedLow}`);
-        console.log(`Extended Point Records (High): ${extendedHigh}`);
-        console.log(`Extended Point Records (Total): ${extendedNumberOfPointRecords}`);
-
-        if (extendedNumberOfPointRecords > 0) {
-          totalPoints = extendedNumberOfPointRecords;
-        }
-      }
-
+      console.log(`LAS/LAZバージョン: ${versionMajor}.${versionMinor}`);
       console.log(`Point Data Format: ${pointDataFormat}`);
       console.log(`Point Data Record Length: ${pointDataRecordLength}`);
-      console.log(`Number of Point Records (Header): ${numberOfPointRecords}`);
-      console.log(`Total Points: ${totalPoints}`);
+      console.log(`Number of Point Records: ${numberOfPointRecords}`);
 
       // スケールとオフセット
       const xScale = dataView.getFloat64(131, true);
@@ -1140,138 +1116,110 @@ const PointCloudViewer = forwardRef(({
       console.log(`Point Data Offset: ${pointDataOffset}`);
       console.log(`Bounds: X[${minX}, ${maxX}] Y[${minY}, ${maxY}] Z[${minZ}, ${maxZ}]`);
 
-      return {
-        versionMajor,
-        versionMinor,
-        pointDataFormat,
-        pointDataRecordLength,
-        numberOfPointRecords,
-        totalPoints,
-        xScale,
-        yScale,
-        zScale,
-        xOffset,
-        yOffset,
-        zOffset,
-        maxX,
-        minX,
-        maxY,
-        minY,
-        maxZ,
-        minZ,
-        pointDataOffset
-      };
-    } catch (error) {
-      console.error('LASヘッダー解析エラー:', error);
-      return null;
-    }
-  };
+      // 点群データを読み込み
+      const points = [];
+      const colors = [];
+      const maxPoints = Math.min(numberOfPointRecords, 100000); // パフォーマンスのため最大10万点に制限
 
-  /**
-   * LASファイルの点群データを解析する（LODシステム対応）
-   * @param {DataView} dataView - データビュー
-   * @param {Object} header - ヘッダー情報
-   * @returns {Array} 点群データの配列
-   */
-  const parseLASPoints = (dataView, header) => {
-    const points = [];
-    const offset = header.pointDataOffset;
-    const recordLength = header.pointDataRecordLength;
-    const pointDataFormat = header.pointDataFormat;
+      console.log(`点群データを読み込み中... (最大${maxPoints}点)`);
 
-    // LODシステムが自動調整するため、 2点ごとに読み込み
-    const maxPoints = header.totalPoints;
-    const step = 2; // 2点ごとに読み込み
+      for (let i = 0; i < maxPoints; i++) {
+        const recordOffset = pointDataOffset + (i * pointDataRecordLength);
 
-    console.log(`点群データを読み込み中... (最大${maxPoints}点, LODシステムで自動調整)`);
+        if (recordOffset + pointDataRecordLength > dataView.byteLength) {
+          console.log(`点 ${i} の読み込みに失敗: データ範囲外`);
+          break;
+        }
 
-    for (let i = 0; i < maxPoints; i += step) {
-      const recordOffset = offset + (i * recordLength);
+        try {
+          // 位置データを読み取り（Little Endian）
+          const x = dataView.getInt32(recordOffset, true);
+          const y = dataView.getInt32(recordOffset + 4, true);
+          const z = dataView.getInt32(recordOffset + 8, true);
 
-      // データ範囲チェック
-      if (recordOffset + recordLength > dataView.byteLength) {
-        console.log(`点 ${i} の読み込みに失敗: データ範囲外 (オフセット: ${recordOffset}, レコード長: ${recordLength}, データ長: ${dataView.byteLength})`);
-        break;
-      }
+          // スケールとオフセットを適用して世界座標に変換
+          const worldX = x * xScale + xOffset;
+          const worldY = y * yScale + yOffset;
+          const worldZ = z * zScale + zOffset;
 
-      try {
-        // 位置データを読み取り（Little Endian）
-        const x = dataView.getInt32(recordOffset, true);
-        const y = dataView.getInt32(recordOffset + 4, true);
-        const z = dataView.getInt32(recordOffset + 8, true);
+          points.push(worldX, worldY, worldZ);
 
-        const point = { x, y, z };
+          // 色情報がある場合（Point Data Format 2, 3, 5, 6, 7, 8, 10）
+          if ([2, 3, 5, 6, 7, 8, 10].includes(pointDataFormat)) {
+            let colorOffset = 20; // デフォルトの色情報オフセット
 
-        // 色情報がある場合（Point Data Format 2, 3, 5, 6, 7, 8, 10, 135）
-        if ([2, 3, 5, 6, 7, 8, 10, 135].includes(pointDataFormat)) {
-          let colorOffset = 20; // デフォルトの色情報オフセット
+            // 各フォーマットでの色情報の位置を設定
+            switch (pointDataFormat) {
+              case 2:
+                colorOffset = 20;
+                break;
+              case 3:
+              case 5:
+              case 6:
+              case 10:
+                colorOffset = 28;
+                break;
+              case 7:
+              case 8:
+                colorOffset = 30;
+                break;
+            }
 
-          // 各フォーマットでの色情報の位置を正確に設定
-          switch (pointDataFormat) {
-            case 2:
-              colorOffset = 20; // RGB情報のオフセット（X,Y,Z,Intensity,Return,Class,ScanAngle,UserData,PointSourceID,R,G,B）
-              break;
-            case 3:
-              colorOffset = 28; // RGB情報のオフセット（X,Y,Z,Intensity,Return,Class,ScanAngle,UserData,PointSourceID,GPS_Time,R,G,B）
-              break;
-            case 5:
-              colorOffset = 28; // RGB情報のオフセット（X,Y,Z,Intensity,Return,Class,ScanAngle,UserData,PointSourceID,GPS_Time,R,G,B）
-              break;
-            case 6:
-              colorOffset = 28; // RGB情報のオフセット（X,Y,Z,Intensity,Return,Class,ScanAngle,UserData,PointSourceID,GPS_Time,Red,Green,Blue）
-              break;
-            case 7:
-              colorOffset = 30; // RGB情報のオフセット（X,Y,Z,Intensity,Return,Class,ScanAngle,UserData,PointSourceID,GPS_Time,Red,Green,Blue）
-              break;
-            case 8:
-              colorOffset = 30; // RGB情報のオフセット（X,Y,Z,Intensity,Return,Class,ScanAngle,UserData,PointSourceID,GPS_Time,Red,Green,Blue）
-              break;
-            case 10:
-              colorOffset = 28; // RGB情報のオフセット（X,Y,Z,Intensity,Return,Class,ScanAngle,UserData,PointSourceID,GPS_Time,Red,Green,Blue）
-              break;
-            case 135:
-              colorOffset = 20; // 拡張フォーマット135の色情報オフセット（仮定）
-              break;
-          }
-
-          if (recordOffset + colorOffset + 6 < dataView.byteLength) {
-            // 16ビットの色情報を読み取り
-            const red = dataView.getUint16(recordOffset + colorOffset, true);
-            const green = dataView.getUint16(recordOffset + colorOffset + 2, true);
-            const blue = dataView.getUint16(recordOffset + colorOffset + 4, true);
-            
-            // 色情報を正規化（0-1の範囲に変換）
-            point.red = red / 65535.0;
-            point.green = green / 65535.0;
-            point.blue = blue / 65535.0;
-            
-            // デバッグ用：最初の数点の色情報をログ出力
-            if (i < 10) {
-              console.log(`点 ${i}: オフセット${colorOffset} RGB(${red}, ${green}, ${blue}) -> 正規化(${point.red.toFixed(3)}, ${point.green.toFixed(3)}, ${point.blue.toFixed(3)})`);
+            if (recordOffset + colorOffset + 6 < dataView.byteLength) {
+              // 16ビットの色情報を読み取り
+              const red = dataView.getUint16(recordOffset + colorOffset, true);
+              const green = dataView.getUint16(recordOffset + colorOffset + 2, true);
+              const blue = dataView.getUint16(recordOffset + colorOffset + 4, true);
+              
+              // 色情報を正規化（0-1の範囲に変換）
+              colors.push(red / 65535.0, green / 65535.0, blue / 65535.0);
+            } else {
+              // 色情報がない場合は高さに基づいて色を設定
+              const normalizedHeight = (worldZ - minZ) / (maxZ - minZ);
+              colors.push(Math.max(0, Math.min(1, normalizedHeight)), 
+                         Math.max(0, Math.min(1, 1.0 - normalizedHeight)), 
+                         0.5);
             }
           } else {
-            // 色情報が読み取れない場合のデバッグ情報
-            if (i < 10) {
-              console.log(`点 ${i}: 色情報が読み取れません (オフセット: ${colorOffset}, レコード長: ${recordLength})`);
-            }
+            // 色情報がない場合は高さに基づいて色を設定
+            const normalizedHeight = (worldZ - minZ) / (maxZ - minZ);
+            colors.push(Math.max(0, Math.min(1, normalizedHeight)), 
+                       Math.max(0, Math.min(1, 1.0 - normalizedHeight)), 
+                       0.5);
           }
-        }
 
-        points.push(point);
-
-        // 進捗表示（1000万点ごと）
-        if (i > 0 && i % 1000000 === 0) {
-          console.log(`読み込み進捗: ${i}/${maxPoints} 点`);
+          // 進捗表示（1万点ごと）
+          if (i > 0 && i % 10000 === 0) {
+            console.log(`読み込み進捗: ${i}/${maxPoints} 点`);
+          }
+        } catch (error) {
+          console.warn(`点 ${i} の読み込みに失敗:`, error);
+          break;
         }
-      } catch (error) {
-        console.warn(`点 ${i} の読み込みに失敗:`, error);
-        break;
       }
-    }
 
-    console.log(`点群データ読み込み完了: ${points.length} 点`);
-    return points;
+      console.log(`点群データ読み込み完了: ${points.length / 3} 点`);
+
+      // Three.jsのジオメトリを作成
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(points), 3));
+      geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3));
+
+      // 境界・球を計算
+      geometry.computeBoundingBox();
+      geometry.computeBoundingSphere();
+
+      // three座標系に合わせ回転（既存LASと整合）
+      geometry.rotateX(-Math.PI / 2);
+
+      // 点群作成・追加
+      createPointCloud(geometry);
+    } catch (error) {
+      console.error('LAZファイル読み込みエラー:', error);
+      throw new Error('LAZファイルの読み込みに失敗しました: ' + error.message);
+    }
   };
+
 
   /**
    * LOD管理クラス
