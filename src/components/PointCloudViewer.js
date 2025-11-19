@@ -283,6 +283,9 @@ const PointCloudViewer = forwardRef(({
     scene.add(gridHelper);
     gridHelperRef.current = gridHelper;
 
+    const axesHelper = new THREE.AxesHelper(100); // サイズは必要に応じて調整
+    scene.add(axesHelper);
+
     // Stats Panelを初期化
     const stats = new Stats();
     stats.showPanel(0); // フレームレートパネルを表示
