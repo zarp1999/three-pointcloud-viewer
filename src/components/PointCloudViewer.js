@@ -894,7 +894,7 @@ const PointCloudViewer = forwardRef(({
           : minElevation;
         
         // 3D座標を計算（ピクセル座標モードまたは地理座標モード）
-        let worldY; // PlaneGeometryではY座標が高さ
+        let worldY; // Y座標が高さ
         
         // 標高差が小さい場合はピクセル座標を使用（Pythonと同じ表示）
         if (elevationRange < 1000) {
@@ -906,8 +906,19 @@ const PointCloudViewer = forwardRef(({
           console.log('地理座標モードを使用');
         }
         
-        // 頂点のY座標（高さ）を更新（PlaneGeometryではY軸が高さ）
-        vertices[vertexIndex + 1] = worldY;
+        // 座標変換: Z軸をX軸に変更し、X軸を反転
+        // 現在の座標: vertices[vertexIndex] = X, vertices[vertexIndex + 1] = Y, vertices[vertexIndex + 2] = Z
+        // 変換後: 新しいX = -Z（反転）, 新しいY = Y（標高）, 新しいZ = X
+        const currentX = vertices[vertexIndex];     // 元のX座標
+        const currentZ = vertices[vertexIndex + 2]; // 元のZ座標
+        
+        vertices[vertexIndex] = -currentZ;           // 新しいX = -Z（反転）
+        vertices[vertexIndex + 1] = worldY;         // 新しいY = 標高
+        vertices[vertexIndex + 2] = currentX;       // 新しいZ = X
+        
+        // 座標オフセットを適用
+        vertices[vertexIndex] -= 36708.8427;        // X座標から36708.8427を引き算
+        vertices[vertexIndex + 2] += 8088.7211;     // Z座標に8088.7211を足す（-8088.7211を引き算するのと同じ）
         
         // 標高に基づく色を計算
         const normalizedElevation = elevationRange > 0 ? (validElevation - minElevation) / elevationRange : 0;
@@ -993,7 +1004,9 @@ const PointCloudViewer = forwardRef(({
       return;
     }
 
-    geometry.rotateX(-Math.PI / 2);
+    // 座標変換はcreateTerrainMesh内で既に実行済みなので、回転は不要
+    // geometry.rotateX(-Math.PI / 2);
+    
     // 境界を計算
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
