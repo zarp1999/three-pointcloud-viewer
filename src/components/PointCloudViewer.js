@@ -132,6 +132,14 @@ const PointCloudViewer = forwardRef(({
     if (currentPointCloudRef.current) {
       currentPointCloudRef.current.material.opacity = opacity;
     }
+    // 地形にも透明度を適用
+    if (terrainObjectRef.current) {
+      terrainObjectRef.current.material.opacity = opacity;
+    }
+    // 複数の地形がある場合
+    terrainsRef.current.forEach(terrain => {
+      terrain.material.opacity = opacity;
+    });
   }, [opacity]);
 
   /**
@@ -1018,8 +1026,8 @@ const PointCloudViewer = forwardRef(({
       shininess: 10,
       specular: 0x000000,
       emissive: 0x000000,
-      transparent: false,
-      opacity: 1.0
+      transparent: true, // 透明度を有効化
+      opacity: opacity // 透明度プロパティを使用
     });
 
     // 地形メッシュを作成
